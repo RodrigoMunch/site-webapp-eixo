@@ -2,52 +2,46 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { 
-  Home, 
-  Target, 
-  TrendingUp, 
-  Settings, 
-  Lock,
-  AlertCircle,
-  CheckCircle,
+import {
   DollarSign,
-  CreditCard,
-  Calendar,
-  Crown,
-  Receipt,
-  FolderOpen,
-  Plus,
-  Search,
-  Download,
-  Edit2,
-  Trash2,
   ArrowUpCircle,
   ArrowDownCircle,
+  Target,
+  TrendingDown,
+  Plus,
+  X,
+  Calendar,
+  Tag,
+  FileText,
+  Settings,
+  LogOut,
+  Crown,
+  Lock,
+  Sparkles,
   Filter,
-  X
+  Trash2,
+  Download,
+  HelpCircle,
+  BarChart3,
+  PieChart as PieChartIcon,
+  TrendingUp,
 } from "lucide-react";
-import { 
-  BarChart, 
-  Bar, 
-  PieChart, 
-  Pie, 
-  Cell, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend, 
-  ResponsiveContainer 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
 } from "recharts";
-import { format, subDays, startOfMonth, endOfMonth } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { supabase } from "@/lib/supabase";
 
-interface UserData {
-  nome: string;
-  email: string;
-  persona: string;
-}
-
+// Types
 interface Transaction {
   id: string;
   descricao: string;
@@ -64,203 +58,656 @@ interface Category {
   nome: string;
   cor: string;
   icone: string;
-  gasto: number;
   orcamento: number;
+  gasto: number;
+}
+
+interface Meta {
+  id: string;
+  nome: string;
+  valor_total: number;
+  valor_atual: number;
+  prazo: string;
 }
 
 export default function AppPage() {
   const router = useRouter();
-  const [userData, setUserData] = useState<UserData | null>(null);
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [isPremium, setIsPremium] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [userName, setUserName] = useState("Usuário");
 
+  // Estados para transações
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [categories, setCategories] = useState<Category[]>([
+    { id: "1", nome: "Alimentação", cor: "#10B981", icone: "🍔", orcamento: 800, gasto: 0 },
+    { id: "2", nome: "Transporte", cor: "#3B82F6", icone: "🚗", orcamento: 400, gasto: 0 },
+    { id: "3", nome: "Lazer", cor: "#F59E0B", icone: "🎮", orcamento: 300, gasto: 0 },
+    { id: "4", nome: "Saúde", cor: "#EF4444", icone: "💊", orcamento: 200, gasto: 0 },
+  ]);
+  const [metas, setMetas] = useState<Meta[]>([]);
+
+  // Modal de transação
+  const [showTransactionModal, setShowTransactionModal] = useState(false);
+  const [newTransaction, setNewTransaction] = useState({
+    descricao: "",
+    valor: "",
+    tipo: "despesa" as "receita" | "despesa",
+    categoria: "Alimentação",
+    data: new Date().toISOString().split("T")[0],
+    parcelado: false,
+    parcelas: "",
+  });
+
+  // Modal de meta
+  const [showMetaModal, setShowMetaModal] = useState(false);
+  const [newMeta, setNewMeta] = useState({
+    nome: "",
+    valor_total: "",
+    prazo: "",
+  });
+
+  // Filtro de extrato
+  const [filtroExtrato, setFiltroExtrato] = useState("30");
+
+  // "Posso Comprar?"
+  const [showPossoComprar, setShowPossoComprar] = useState(false);
+  const [possoComprarValor, setPossoComprarValor] = useState("");
+  const [possoComprarDescricao, setPossoComprarDescricao] = useState("");
+  const [possoComprarResposta, setPossoComprarResposta] = useState<{
+    resposta: "sim" | "nao";
+    explicacao: string;
+  } | null>(null);
+  const [tentativasPossoComprar, setTentativasPossoComprar] = useState(0);
+  const [historicoPossoComprar, setHistoricoPossoComprar] = useState<any[]>([]);
+
+  // Carregar dados do localStorage
   useEffect(() => {
-    // Verificar se usuário está logado
-    const user = localStorage.getItem("eixo_user");
-    if (!user) {
-      router.push("/");
+    const savedTransactions = localStorage.getItem("transactions");
+    const savedCategories = localStorage.getItem("categories");
+    const savedMetas = localStorage.getItem("metas");
+    const savedPremium = localStorage.getItem("isPremium");
+    const savedName = localStorage.getItem("userName");
+    const savedTentativas = localStorage.getItem("tentativasPossoComprar");
+    const savedHistorico = localStorage.getItem("historicoPossoComprar");
+
+    if (savedTransactions) setTransactions(JSON.parse(savedTransactions));
+    if (savedCategories) setCategories(JSON.parse(savedCategories));
+    if (savedMetas) setMetas(JSON.parse(savedMetas));
+    if (savedPremium) setIsPremium(JSON.parse(savedPremium));
+    if (savedName) setUserName(savedName);
+    if (savedTentativas) setTentativasPossoComprar(JSON.parse(savedTentativas));
+    if (savedHistorico) setHistoricoPossoComprar(JSON.parse(savedHistorico));
+  }, []);
+
+  // Salvar dados no localStorage
+  useEffect(() => {
+    localStorage.setItem("transactions", JSON.stringify(transactions));
+    localStorage.setItem("categories", JSON.stringify(categories));
+    localStorage.setItem("metas", JSON.stringify(metas));
+    localStorage.setItem("isPremium", JSON.stringify(isPremium));
+    localStorage.setItem("tentativasPossoComprar", JSON.stringify(tentativasPossoComprar));
+    localStorage.setItem("historicoPossoComprar", JSON.stringify(historicoPossoComprar));
+  }, [transactions, categories, metas, isPremium, tentativasPossoComprar, historicoPossoComprar]);
+
+  // Atualizar gastos das categorias
+  useEffect(() => {
+    const updatedCategories = categories.map((cat) => {
+      const gasto = transactions
+        .filter((t) => t.tipo === "despesa" && t.categoria === cat.nome)
+        .reduce((acc, t) => acc + t.valor, 0);
+      return { ...cat, gasto };
+    });
+    setCategories(updatedCategories);
+  }, [transactions]);
+
+  const handleAddTransaction = () => {
+    const transaction: Transaction = {
+      id: Date.now().toString(),
+      descricao: newTransaction.descricao,
+      valor: parseFloat(newTransaction.valor),
+      tipo: newTransaction.tipo,
+      categoria: newTransaction.categoria,
+      data: newTransaction.data,
+      parcelado: newTransaction.parcelado,
+      parcelas: newTransaction.parcelas,
+    };
+
+    setTransactions([...transactions, transaction]);
+    setShowTransactionModal(false);
+    setNewTransaction({
+      descricao: "",
+      valor: "",
+      tipo: "despesa",
+      categoria: "Alimentação",
+      data: new Date().toISOString().split("T")[0],
+      parcelado: false,
+      parcelas: "",
+    });
+  };
+
+  const handleDeleteTransaction = (id: string) => {
+    setTransactions(transactions.filter((t) => t.id !== id));
+  };
+
+  const handleAddMeta = () => {
+    const meta: Meta = {
+      id: Date.now().toString(),
+      nome: newMeta.nome,
+      valor_total: parseFloat(newMeta.valor_total),
+      valor_atual: 0,
+      prazo: newMeta.prazo,
+    };
+
+    setMetas([...metas, meta]);
+    setShowMetaModal(false);
+    setNewMeta({ nome: "", valor_total: "", prazo: "" });
+  };
+
+  const handleAdicionarValorMeta = (metaId: string, valor: number) => {
+    setMetas(
+      metas.map((m) =>
+        m.id === metaId ? { ...m, valor_atual: m.valor_atual + valor } : m
+      )
+    );
+  };
+
+  const handleDeleteMeta = (id: string) => {
+    setMetas(metas.filter((m) => m.id !== id));
+  };
+
+  const handlePossoComprar = () => {
+    if (!isPremium && tentativasPossoComprar >= 1) {
+      setShowPaywall(true);
       return;
     }
-    setUserData(JSON.parse(user));
 
-    // Carregar dados mockados
-    loadMockData();
-  }, [router]);
+    const valor = parseFloat(possoComprarValor);
+    const totalReceitas = transactions
+      .filter((t) => t.tipo === "receita")
+      .reduce((acc, t) => acc + t.valor, 0);
+    const totalDespesas = transactions
+      .filter((t) => t.tipo === "despesa")
+      .reduce((acc, t) => acc + t.valor, 0);
+    const saldo = totalReceitas - totalDespesas;
 
-  const loadMockData = () => {
-    // Transações mockadas
-    const mockTransactions: Transaction[] = [
-      { id: "1", descricao: "Salário", valor: 5000, tipo: "receita", categoria: "Salário", data: "2025-01-01" },
-      { id: "2", descricao: "Aluguel", valor: 1500, tipo: "despesa", categoria: "Moradia", data: "2025-01-05" },
-      { id: "3", descricao: "Supermercado", valor: 450, tipo: "despesa", categoria: "Alimentação", data: "2025-01-08" },
-      { id: "4", descricao: "Restaurante", valor: 120, tipo: "despesa", categoria: "Alimentação", data: "2025-01-10" },
-      { id: "5", descricao: "Uber", valor: 80, tipo: "despesa", categoria: "Transporte", data: "2025-01-12" },
-      { id: "6", descricao: "Netflix", valor: 45, tipo: "despesa", categoria: "Lazer", data: "2025-01-15" },
-      { id: "7", descricao: "Academia", valor: 150, tipo: "despesa", categoria: "Saúde", data: "2025-01-18" },
-      { id: "8", descricao: "Freelance", valor: 800, tipo: "receita", categoria: "Renda Extra", data: "2025-01-20" },
-    ];
+    const podeComprar = saldo >= valor && saldo - valor > totalReceitas * 0.1;
 
-    // Categorias mockadas
-    const mockCategories: Category[] = [
-      { id: "1", nome: "Alimentação", cor: "#8B5CF6", icone: "🍔", gasto: 1870, orcamento: 2000 },
-      { id: "2", nome: "Transporte", cor: "#3B82F6", icone: "🚗", gasto: 450, orcamento: 600 },
-      { id: "3", nome: "Moradia", cor: "#10B981", icone: "🏠", gasto: 1500, orcamento: 1500 },
-      { id: "4", nome: "Lazer", cor: "#F59E0B", icone: "🎮", gasto: 320, orcamento: 500 },
-      { id: "5", nome: "Saúde", cor: "#EF4444", icone: "💊", gasto: 280, orcamento: 400 },
-    ];
-
-    setTransactions(mockTransactions);
-    setCategories(mockCategories);
-  };
-
-  const addTransaction = (transaction: Omit<Transaction, "id">) => {
-    const newTransaction = {
-      ...transaction,
-      id: Date.now().toString(),
+    const resposta = {
+      resposta: podeComprar ? ("sim" as const) : ("nao" as const),
+      explicacao: podeComprar
+        ? `Sim! Você pode fazer essa compra. Após a compra, você ainda terá R$ ${(saldo - valor).toFixed(2)} disponível.`
+        : `Não recomendamos. Essa compra comprometeria muito seu saldo atual de R$ ${saldo.toFixed(2)}.`,
     };
-    setTransactions([newTransaction, ...transactions]);
+
+    setPossoComprarResposta(resposta);
+    setTentativasPossoComprar(tentativasPossoComprar + 1);
+
+    // Adicionar ao histórico
+    const historico = {
+      id: Date.now().toString(),
+      valor,
+      descricao: possoComprarDescricao,
+      resposta: resposta.resposta,
+      explicacao: resposta.explicacao,
+      data: new Date().toISOString(),
+    };
+    setHistoricoPossoComprar([historico, ...historicoPossoComprar]);
   };
 
-  const deleteTransaction = (id: string) => {
-    setTransactions(transactions.filter(t => t.id !== id));
+  const handleExportData = (format: "pdf" | "csv") => {
+    if (!isPremium && format === "pdf") {
+      setShowPaywall(true);
+      return;
+    }
+
+    if (format === "csv") {
+      const csv = [
+        ["Data", "Descrição", "Tipo", "Categoria", "Valor"],
+        ...transactions.map((t) => [
+          t.data,
+          t.descricao,
+          t.tipo,
+          t.categoria,
+          t.valor.toString(),
+        ]),
+      ]
+        .map((row) => row.join(","))
+        .join("\n");
+
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "transacoes.csv";
+      a.click();
+    }
   };
 
-  if (!userData) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-gray-900 text-xl">Carregando...</div>
-      </div>
-    );
-  }
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/");
+  };
+
+  const getFilteredTransactions = () => {
+    const dias = parseInt(filtroExtrato);
+    const dataLimite = new Date();
+    dataLimite.setDate(dataLimite.getDate() - dias);
+
+    return transactions.filter((t) => new Date(t.data) >= dataLimite);
+  };
+
+  const filteredTransactions = getFilteredTransactions();
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
       {/* Header */}
-      <header className="border-b border-gray-200 bg-white sticky top-0 z-50 shadow-sm">
+      <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-10 h-10 bg-black rounded-lg flex items-center justify-center">
-                <DollarSign className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">FinanceControl</h1>
-              </div>
+              <svg
+                viewBox="0 0 120 40"
+                className="h-10 w-auto"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <text
+                  x="10"
+                  y="30"
+                  fontFamily="system-ui, -apple-system, sans-serif"
+                  fontSize="32"
+                  fontWeight="700"
+                  fill="#2E004F"
+                  letterSpacing="-0.5"
+                >
+                  EIXO
+                </text>
+              </svg>
             </div>
-            <button
-              onClick={() => setShowPaywall(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-black text-white rounded-lg text-sm font-semibold hover:bg-gray-800 transition-all"
-            >
-              <Crown className="w-4 h-4" />
-              <span className="hidden sm:inline">Upgrade Premium</span>
-            </button>
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-slate-400">Olá, {userName}</span>
+              {!isPremium && (
+                <button
+                  onClick={() => setShowPaywall(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-800 rounded-lg hover:from-purple-700 hover:to-purple-900 transition-all"
+                >
+                  <Crown className="w-4 h-4" />
+                  <span className="text-sm font-semibold">Upgrade Premium</span>
+                </button>
+              )}
+              <button
+                onClick={handleLogout}
+                className="p-2 hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                <LogOut className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
       {/* Navigation */}
-      <nav className="bg-white border-b border-gray-200">
+      <nav className="border-b border-slate-800 bg-slate-900/30 backdrop-blur-sm sticky top-[73px] z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex gap-8">
-            <button
-              onClick={() => setActiveTab("dashboard")}
-              className={`py-4 px-2 border-b-2 transition-all ${
-                activeTab === "dashboard"
-                  ? "border-black text-black font-semibold"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              Dashboard
-            </button>
-            <button
-              onClick={() => setActiveTab("extrato")}
-              className={`py-4 px-2 border-b-2 transition-all ${
-                activeTab === "extrato"
-                  ? "border-black text-black font-semibold"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              Extrato
-            </button>
-            <button
-              onClick={() => setActiveTab("categorias")}
-              className={`py-4 px-2 border-b-2 transition-all ${
-                activeTab === "categorias"
-                  ? "border-black text-black font-semibold"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              Categorias
-            </button>
-            <button
-              onClick={() => setActiveTab("config")}
-              className={`py-4 px-2 border-b-2 transition-all ${
-                activeTab === "config"
-                  ? "border-black text-black font-semibold"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              Configurações
-            </button>
+          <div className="flex gap-1 overflow-x-auto">
+            {[
+              { id: "dashboard", label: "Dashboard", icon: BarChart3 },
+              { id: "extrato", label: "Extrato", icon: FileText },
+              { id: "categorias", label: "Categorias", icon: Tag },
+              { id: "metas", label: "Metas", icon: Target },
+              { id: "posso-comprar", label: "Posso Comprar?", icon: HelpCircle },
+              { id: "configuracoes", label: "Configurações", icon: Settings },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-all whitespace-nowrap ${
+                  activeTab === tab.id
+                    ? "border-purple-500 text-white"
+                    : "border-transparent text-slate-400 hover:text-white"
+                }`}
+              >
+                <tab.icon className="w-4 h-4" />
+                {tab.label}
+              </button>
+            ))}
           </div>
         </div>
       </nav>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeTab === "dashboard" && (
-          <DashboardPage 
-            transactions={transactions} 
+          <DashboardPage
+            transactions={filteredTransactions}
             categories={categories}
-            onUpgrade={() => setShowPaywall(true)} 
+            onUpgrade={() => setShowPaywall(true)}
           />
         )}
+
         {activeTab === "extrato" && (
-          <ExtratoPage 
+          <ExtratoPage
             transactions={transactions}
-            onAddTransaction={addTransaction}
-            onDeleteTransaction={deleteTransaction}
+            filtro={filtroExtrato}
+            setFiltro={setFiltroExtrato}
+            onDelete={handleDeleteTransaction}
+            onAdd={() => setShowTransactionModal(true)}
           />
         )}
+
         {activeTab === "categorias" && (
           <CategoriasPage categories={categories} />
         )}
-        {activeTab === "config" && <ConfigPage userData={userData} />}
-      </div>
 
-      {/* Paywall Modal */}
+        {activeTab === "metas" && (
+          <MetasPage
+            metas={metas}
+            isPremium={isPremium}
+            onAdd={() => setShowMetaModal(true)}
+            onAddValor={handleAdicionarValorMeta}
+            onDelete={handleDeleteMeta}
+            onUpgrade={() => setShowPaywall(true)}
+          />
+        )}
+
+        {activeTab === "posso-comprar" && (
+          <PossoComprarPage
+            valor={possoComprarValor}
+            setValor={setPossoComprarValor}
+            descricao={possoComprarDescricao}
+            setDescricao={setPossoComprarDescricao}
+            resposta={possoComprarResposta}
+            onAnalisar={handlePossoComprar}
+            tentativas={tentativasPossoComprar}
+            isPremium={isPremium}
+            historico={historicoPossoComprar}
+            onUpgrade={() => setShowPaywall(true)}
+          />
+        )}
+
+        {activeTab === "configuracoes" && (
+          <ConfiguracoesPage
+            userName={userName}
+            setUserName={setUserName}
+            isPremium={isPremium}
+            onExport={handleExportData}
+            onUpgrade={() => setShowPaywall(true)}
+          />
+        )}
+      </main>
+
+      {/* Modal de Transação */}
+      {showTransactionModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-2xl p-6 max-w-md w-full border border-slate-700">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-white">Nova Transação</h2>
+              <button
+                onClick={() => setShowTransactionModal(false)}
+                className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Descrição
+                </label>
+                <input
+                  type="text"
+                  value={newTransaction.descricao}
+                  onChange={(e) =>
+                    setNewTransaction({ ...newTransaction, descricao: e.target.value })
+                  }
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white"
+                  placeholder="Ex: Almoço no restaurante"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Valor
+                </label>
+                <input
+                  type="number"
+                  value={newTransaction.valor}
+                  onChange={(e) =>
+                    setNewTransaction({ ...newTransaction, valor: e.target.value })
+                  }
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white"
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Tipo
+                </label>
+                <select
+                  value={newTransaction.tipo}
+                  onChange={(e) =>
+                    setNewTransaction({
+                      ...newTransaction,
+                      tipo: e.target.value as "receita" | "despesa",
+                    })
+                  }
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white"
+                >
+                  <option value="despesa">Despesa</option>
+                  <option value="receita">Receita</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Categoria
+                </label>
+                <select
+                  value={newTransaction.categoria}
+                  onChange={(e) =>
+                    setNewTransaction({ ...newTransaction, categoria: e.target.value })
+                  }
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white"
+                >
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.nome}>
+                      {cat.icone} {cat.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Data
+                </label>
+                <input
+                  type="date"
+                  value={newTransaction.data}
+                  onChange={(e) =>
+                    setNewTransaction({ ...newTransaction, data: e.target.value })
+                  }
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white"
+                />
+              </div>
+
+              <button
+                onClick={handleAddTransaction}
+                className="w-full py-3 bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-700 hover:to-purple-900 text-white font-semibold rounded-lg transition-all"
+              >
+                Adicionar Transação
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Meta */}
+      {showMetaModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-2xl p-6 max-w-md w-full border border-slate-700">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-white">Nova Meta</h2>
+              <button
+                onClick={() => setShowMetaModal(false)}
+                className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Nome da Meta
+                </label>
+                <input
+                  type="text"
+                  value={newMeta.nome}
+                  onChange={(e) => setNewMeta({ ...newMeta, nome: e.target.value })}
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white"
+                  placeholder="Ex: Viagem para Europa"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Valor Total
+                </label>
+                <input
+                  type="number"
+                  value={newMeta.valor_total}
+                  onChange={(e) =>
+                    setNewMeta({ ...newMeta, valor_total: e.target.value })
+                  }
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white"
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Prazo
+                </label>
+                <input
+                  type="date"
+                  value={newMeta.prazo}
+                  onChange={(e) => setNewMeta({ ...newMeta, prazo: e.target.value })}
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white"
+                />
+              </div>
+
+              <button
+                onClick={handleAddMeta}
+                className="w-full py-3 bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-700 hover:to-purple-900 text-white font-semibold rounded-lg transition-all"
+              >
+                Criar Meta
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Paywall */}
       {showPaywall && (
-        <PaywallModal persona={userData.persona} onClose={() => setShowPaywall(false)} />
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-2xl p-8 max-w-lg w-full border border-slate-700">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-purple-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Crown className="w-8 h-8 text-white" />
+              </div>
+              <h2 className="text-2xl font-bold text-white mb-2">
+                Upgrade para Premium
+              </h2>
+              <p className="text-slate-400 mb-6">
+                Desbloqueie todos os recursos e tome decisões ainda melhores
+              </p>
+
+              <div className="space-y-3 mb-6 text-left">
+                <div className="flex items-center gap-3 text-slate-300">
+                  <div className="w-6 h-6 bg-green-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span className="text-green-400 text-sm">✓</span>
+                  </div>
+                  <span>Análises "Posso Comprar?" ilimitadas</span>
+                </div>
+                <div className="flex items-center gap-3 text-slate-300">
+                  <div className="w-6 h-6 bg-green-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span className="text-green-400 text-sm">✓</span>
+                  </div>
+                  <span>Metas ilimitadas</span>
+                </div>
+                <div className="flex items-center gap-3 text-slate-300">
+                  <div className="w-6 h-6 bg-green-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span className="text-green-400 text-sm">✓</span>
+                  </div>
+                  <span>Roast semanal personalizado</span>
+                </div>
+                <div className="flex items-center gap-3 text-slate-300">
+                  <div className="w-6 h-6 bg-green-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span className="text-green-400 text-sm">✓</span>
+                  </div>
+                  <span>Exportação completa de dados</span>
+                </div>
+                <div className="flex items-center gap-3 text-slate-300">
+                  <div className="w-6 h-6 bg-green-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span className="text-green-400 text-sm">✓</span>
+                  </div>
+                  <span>Histórico completo de análises</span>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowPaywall(false)}
+                  className="flex-1 py-3 border border-slate-600 text-slate-300 rounded-lg hover:bg-slate-700 transition-all"
+                >
+                  Agora não
+                </button>
+                <button
+                  onClick={() => {
+                    setIsPremium(true);
+                    setShowPaywall(false);
+                  }}
+                  className="flex-1 py-3 bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-700 hover:to-purple-900 text-white font-semibold rounded-lg transition-all"
+                >
+                  Assinar Premium
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
-// Dashboard Page
-function DashboardPage({ 
-  transactions, 
+// Dashboard Page Component
+function DashboardPage({
+  transactions,
   categories,
-  onUpgrade 
-}: { 
+  onUpgrade,
+}: {
   transactions: Transaction[];
   categories: Category[];
   onUpgrade: () => void;
 }) {
-  // Calcular totais
   const totalReceitas = transactions
-    .filter(t => t.tipo === "receita")
+    .filter((t) => t.tipo === "receita")
     .reduce((acc, t) => acc + t.valor, 0);
-  
-  const totalDespesas = transactions
-    .filter(t => t.tipo === "despesa")
-    .reduce((acc, t) => acc + t.valor, 0);
-  
-  const saldoTotal = totalReceitas - totalDespesas;
-  const taxaEconomia = totalReceitas > 0 ? ((saldoTotal / totalReceitas) * 100).toFixed(1) : "0";
 
-  // Dados para gráfico de fluxo de caixa
+  const totalDespesas = transactions
+    .filter((t) => t.tipo === "despesa")
+    .reduce((acc, t) => acc + t.valor, 0);
+
+  const saldoTotal = totalReceitas - totalDespesas;
+  const taxaEconomia =
+    totalReceitas > 0
+      ? ((saldoTotal / totalReceitas) * 100).toFixed(1)
+      : "0";
+
   const fluxoCaixaData = [
     { mes: "Jan", receitas: 5800, despesas: 3200 },
     { mes: "Fev", receitas: 5000, despesas: 3800 },
@@ -270,81 +717,98 @@ function DashboardPage({
     { mes: "Jun", receitas: 6000, despesas: 3400 },
   ];
 
-  // Dados para gráfico de pizza
-  const gastosPorCategoria = categories.map(cat => ({
-    name: cat.nome,
-    value: cat.gasto,
-    color: cat.cor,
-  }));
+  const gastosPorCategoria = categories
+    .filter((cat) => cat.gasto > 0)
+    .map((cat) => ({
+      name: cat.nome,
+      value: cat.gasto,
+      color: cat.cor,
+    }));
 
-  const COLORS = categories.map(cat => cat.cor);
+  const gastosDelivery = transactions
+    .filter(
+      (t) =>
+        t.tipo === "despesa" &&
+        t.descricao.toLowerCase().includes("ifood")
+    )
+    .reduce((acc, t) => acc + t.valor, 0);
 
   return (
     <div className="space-y-6">
       {/* Cards de Resumo */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+        <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6 shadow-sm backdrop-blur-sm">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-gray-600">Saldo Total</p>
-            <DollarSign className="w-5 h-5 text-gray-400" />
+            <p className="text-sm text-slate-400">Saldo Total</p>
+            <DollarSign className="w-5 h-5 text-slate-400" />
           </div>
-          <p className="text-3xl font-bold text-gray-900">
-            R$ {saldoTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+          <p className="text-3xl font-bold text-white">
+            R${" "}
+            {saldoTotal.toLocaleString("pt-BR", {
+              minimumFractionDigits: 2,
+            })}
           </p>
-          <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+          <p className="text-xs text-green-400 mt-1 flex items-center gap-1">
             <ArrowUpCircle className="w-3 h-3" />
             +12.5% vs mês anterior
           </p>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+        <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6 shadow-sm backdrop-blur-sm">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-gray-600">Receitas</p>
-            <ArrowUpCircle className="w-5 h-5 text-green-600" />
+            <p className="text-sm text-slate-400">Receitas</p>
+            <ArrowUpCircle className="w-5 h-5 text-green-400" />
           </div>
-          <p className="text-3xl font-bold text-gray-900">
-            R$ {totalReceitas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+          <p className="text-3xl font-bold text-white">
+            R${" "}
+            {totalReceitas.toLocaleString("pt-BR", {
+              minimumFractionDigits: 2,
+            })}
           </p>
-          <p className="text-xs text-gray-500 mt-1">Este mês</p>
+          <p className="text-xs text-slate-500 mt-1">Este mês</p>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+        <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6 shadow-sm backdrop-blur-sm">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-gray-600">Despesas</p>
-            <ArrowDownCircle className="w-5 h-5 text-red-600" />
+            <p className="text-sm text-slate-400">Despesas</p>
+            <ArrowDownCircle className="w-5 h-5 text-red-400" />
           </div>
-          <p className="text-3xl font-bold text-gray-900">
-            R$ {totalDespesas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+          <p className="text-3xl font-bold text-white">
+            R${" "}
+            {totalDespesas.toLocaleString("pt-BR", {
+              minimumFractionDigits: 2,
+            })}
           </p>
-          <p className="text-xs text-gray-500 mt-1">Este mês</p>
+          <p className="text-xs text-slate-500 mt-1">Este mês</p>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+        <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6 shadow-sm backdrop-blur-sm">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-gray-600">Taxa de Economia</p>
-            <Target className="w-5 h-5 text-gray-400" />
+            <p className="text-sm text-slate-400">Taxa de Economia</p>
+            <Target className="w-5 h-5 text-slate-400" />
           </div>
-          <p className="text-3xl font-bold text-gray-900">{taxaEconomia}%</p>
-          <p className="text-xs text-gray-500 mt-1">Do total de receitas</p>
+          <p className="text-3xl font-bold text-white">{taxaEconomia}%</p>
+          <p className="text-xs text-slate-500 mt-1">Do total de receitas</p>
         </div>
       </div>
 
       {/* Gráficos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Fluxo de Caixa Mensal */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+        <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6 shadow-sm backdrop-blur-sm">
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-gray-900">Fluxo de Caixa Mensal</h3>
-            <select className="text-sm border border-gray-300 rounded-lg px-3 py-1.5">
+            <h3 className="text-lg font-semibold text-white">
+              Fluxo de Caixa Mensal
+            </h3>
+            <select className="text-sm border border-slate-600 rounded-lg px-3 py-1.5 bg-slate-700 text-white">
               <option>Mês</option>
               <option>Ano</option>
             </select>
           </div>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={fluxoCaixaData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="mes" stroke="#666" />
-              <YAxis stroke="#666" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis dataKey="mes" stroke="#9CA3AF" />
+              <YAxis stroke="#9CA3AF" />
               <Tooltip />
               <Legend />
               <Bar dataKey="receitas" fill="#10B981" name="Receitas" />
@@ -353,515 +817,377 @@ function DashboardPage({
           </ResponsiveContainer>
         </div>
 
-        {/* Gastos por Categoria */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-gray-900 mb-6">Gastos por Categoria</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={gastosPorCategoria}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                outerRadius={100}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {gastosPorCategoria.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="mt-4 space-y-2">
-            {categories.map((cat) => (
-              <div key={cat.id} className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.cor }} />
-                  <span className="text-gray-700">{cat.nome}</span>
-                </div>
-                <span className="font-semibold text-gray-900">
-                  R$ {cat.gasto.toLocaleString("pt-BR")}
-                </span>
+        <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6 shadow-sm backdrop-blur-sm">
+          <h3 className="text-lg font-semibold text-white mb-6">
+            Gastos por Categoria
+          </h3>
+          {gastosPorCategoria.length > 0 ? (
+            <>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={gastosPorCategoria}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) =>
+                      `${name} ${(percent * 100).toFixed(0)}%`
+                    }
+                    outerRadius={100}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {gastosPorCategoria.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="mt-4 space-y-2">
+                {categories
+                  .filter((cat) => cat.gasto > 0)
+                  .map((cat) => (
+                    <div
+                      key={cat.id}
+                      className="flex items-center justify-between text-sm"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: cat.cor }}
+                        />
+                        <span className="text-slate-300">{cat.nome}</span>
+                      </div>
+                      <span className="font-semibold text-white">
+                        R$ {cat.gasto.toLocaleString("pt-BR")}
+                      </span>
+                    </div>
+                  ))}
               </div>
-            ))}
+            </>
+          ) : (
+            <div className="h-[300px] flex items-center justify-center text-slate-400">
+              <div className="text-center">
+                <TrendingDown className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">Nenhum gasto registrado ainda</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Insights */}
+      {gastosDelivery > 0 && (
+        <div className="bg-gradient-to-r from-purple-900/20 to-purple-700/20 border border-purple-500/30 rounded-xl p-6 shadow-sm backdrop-blur-sm">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 bg-purple-900 rounded-full flex items-center justify-center flex-shrink-0">
+              <Sparkles className="w-6 h-6 text-white" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-purple-300 mb-2">
+                💡 Insight da Semana
+              </h3>
+              <p className="text-slate-300 leading-relaxed">
+                Você gastou{" "}
+                <span className="font-bold text-purple-300">
+                  R$ {gastosDelivery.toFixed(2)}
+                </span>{" "}
+                em delivery este mês. Se tivesse cozinhado 2x por semana,
+                sobrariam cerca de{" "}
+                <span className="font-bold text-green-400">
+                  R$ {(gastosDelivery * 0.6).toFixed(2)}
+                </span>
+                .
+              </p>
+              <p className="text-sm text-slate-400 mt-2">
+                Pequenas mudanças fazem diferença no final do mês. 🍳
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Resumo Semanal */}
+      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 shadow-sm backdrop-blur-sm">
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 bg-purple-900/50 rounded-full flex items-center justify-center flex-shrink-0">
+            <FileText className="w-6 h-6 text-purple-300" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold text-white mb-2">
+              📊 Resumo da Sua Semana
+            </h3>
+            <p className="text-slate-300 leading-relaxed mb-3">
+              Você está indo bem! Suas despesas estão{" "}
+              {totalDespesas < totalReceitas * 0.7
+                ? "controladas"
+                : "um pouco altas"}{" "}
+              este mês.
+              {saldoTotal > 0 &&
+                ` Você conseguiu economizar R$ ${saldoTotal.toFixed(2)}.`}
+            </p>
+            <div className="flex items-center gap-2 text-sm text-slate-400">
+              <Lock className="w-4 h-4" />
+              <span>Roast semanal personalizado disponível no Premium</span>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Orçamentos */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-gray-900 mb-6">Orçamentos por Categoria</h3>
-        <div className="space-y-4">
-          {categories.map((cat) => {
-            const percentual = (cat.gasto / cat.orcamento) * 100;
-            const restante = cat.orcamento - cat.gasto;
-            return (
-              <div key={cat.id} className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl">{cat.icone}</span>
-                    <span className="font-medium text-gray-900">{cat.nome}</span>
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6 shadow-sm backdrop-blur-sm">
+        <h3 className="text-lg font-semibold text-white mb-6">
+          Orçamentos por Categoria
+        </h3>
+        {categories.length > 0 ? (
+          <div className="space-y-4">
+            {categories.map((cat) => {
+              const percentual = (cat.gasto / cat.orcamento) * 100;
+              const restante = cat.orcamento - cat.gasto;
+              return (
+                <div key={cat.id} className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">{cat.icone}</span>
+                      <span className="font-medium text-white">
+                        {cat.nome}
+                      </span>
+                    </div>
+                    <span className="text-sm text-slate-400">
+                      {percentual.toFixed(1)}%
+                    </span>
                   </div>
-                  <span className="text-sm text-gray-600">{percentual.toFixed(1)}%</span>
+                  <div className="flex items-center gap-4 text-sm">
+                    <span className="text-slate-400">
+                      Gasto: R$ {cat.gasto.toLocaleString("pt-BR")}
+                    </span>
+                    <span className="text-slate-400">
+                      Orçamento: R$ {cat.orcamento.toLocaleString("pt-BR")}
+                    </span>
+                  </div>
+                  <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${Math.min(percentual, 100)}%`,
+                        backgroundColor: cat.cor,
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span
+                      className={
+                        restante >= 0 ? "text-green-400" : "text-red-400"
+                      }
+                    >
+                      {restante >= 0 ? "Restante" : "Excedido"}: R${" "}
+                      {Math.abs(restante).toLocaleString("pt-BR")}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-4 text-sm">
-                  <span className="text-gray-600">
-                    Gasto: R$ {cat.gasto.toLocaleString("pt-BR")}
-                  </span>
-                  <span className="text-gray-600">
-                    Orçamento: R$ {cat.orcamento.toLocaleString("pt-BR")}
-                  </span>
-                </div>
-                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-black rounded-full transition-all"
-                    style={{ width: `${Math.min(percentual, 100)}%` }}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className={restante >= 0 ? "text-green-600" : "text-red-600"}>
-                    {restante >= 0 ? "Restante" : "Excedido"}: R$ {Math.abs(restante).toLocaleString("pt-BR")}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-slate-400">
+            <p>Nenhuma categoria configurada ainda</p>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-// Extrato Page
-function ExtratoPage({ 
+// Extrato Page Component
+function ExtratoPage({
   transactions,
-  onAddTransaction,
-  onDeleteTransaction
-}: { 
+  filtro,
+  setFiltro,
+  onDelete,
+  onAdd,
+}: {
   transactions: Transaction[];
-  onAddTransaction: (transaction: Omit<Transaction, "id">) => void;
-  onDeleteTransaction: (id: string) => void;
+  filtro: string;
+  setFiltro: (filtro: string) => void;
+  onDelete: (id: string) => void;
+  onAdd: () => void;
 }) {
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [filtroTipo, setFiltroTipo] = useState<"todos" | "receita" | "despesa">("todos");
-  const [filtroCategoria, setFiltroCategoria] = useState("todas");
-  const [filtroPeriodo, setFiltroPeriodo] = useState("30");
-  const [busca, setBusca] = useState("");
+  const getFilteredTransactions = () => {
+    const dias = parseInt(filtro);
+    const dataLimite = new Date();
+    dataLimite.setDate(dataLimite.getDate() - dias);
 
-  // Filtrar transações
-  const transacoesFiltradas = transactions.filter(t => {
-    const matchTipo = filtroTipo === "todos" || t.tipo === filtroTipo;
-    const matchCategoria = filtroCategoria === "todas" || t.categoria === filtroCategoria;
-    const matchBusca = t.descricao.toLowerCase().includes(busca.toLowerCase()) ||
-                       t.categoria.toLowerCase().includes(busca.toLowerCase());
-    return matchTipo && matchCategoria && matchBusca;
-  });
+    return transactions.filter((t) => new Date(t.data) >= dataLimite);
+  };
 
-  // Calcular resumo
-  const totalReceitas = transacoesFiltradas
-    .filter(t => t.tipo === "receita")
+  const filteredTransactions = getFilteredTransactions();
+
+  const totalReceitas = filteredTransactions
+    .filter((t) => t.tipo === "receita")
     .reduce((acc, t) => acc + t.valor, 0);
-  
-  const totalDespesas = transacoesFiltradas
-    .filter(t => t.tipo === "despesa")
+
+  const totalDespesas = filteredTransactions
+    .filter((t) => t.tipo === "despesa")
     .reduce((acc, t) => acc + t.valor, 0);
-  
+
   const saldo = totalReceitas - totalDespesas;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Extrato Completo</h2>
-        <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
-            <Download className="w-4 h-4" />
-            Exportar
-          </button>
+      {/* Header com Filtros */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Extrato</h2>
+          <p className="text-slate-400 text-sm">
+            Visualize todas as suas transações
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-slate-800 rounded-lg p-1">
+            {["1", "7", "30"].map((dias) => (
+              <button
+                key={dias}
+                onClick={() => setFiltro(dias)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  filtro === dias
+                    ? "bg-purple-600 text-white"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                {dias === "1" ? "Hoje" : `${dias} dias`}
+              </button>
+            ))}
+          </div>
           <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-black text-white rounded-lg text-sm font-semibold hover:bg-gray-800"
+            onClick={onAdd}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-800 rounded-lg hover:from-purple-700 hover:to-purple-900 transition-all"
           >
             <Plus className="w-4 h-4" />
-            Nova Transação
+            <span className="text-sm font-semibold">Nova Transação</span>
           </button>
         </div>
       </div>
 
-      {/* Filtros Avançados */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-        <h3 className="text-sm font-semibold text-gray-900 mb-4">Filtros Avançados</h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Buscar por descrição ou categoria"
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black"
-            />
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setFiltroPeriodo("0")}
-              className={`px-3 py-2 text-sm rounded-lg ${
-                filtroPeriodo === "0" ? "bg-black text-white" : "bg-gray-100 text-gray-700"
-              }`}
-            >
-              Hoje
-            </button>
-            <button
-              onClick={() => setFiltroPeriodo("7")}
-              className={`px-3 py-2 text-sm rounded-lg ${
-                filtroPeriodo === "7" ? "bg-black text-white" : "bg-gray-100 text-gray-700"
-              }`}
-            >
-              7 dias
-            </button>
-            <button
-              onClick={() => setFiltroPeriodo("30")}
-              className={`px-3 py-2 text-sm rounded-lg ${
-                filtroPeriodo === "30" ? "bg-black text-white" : "bg-gray-100 text-gray-700"
-              }`}
-            >
-              30 dias
-            </button>
-          </div>
-          <select
-            value={filtroTipo}
-            onChange={(e) => setFiltroTipo(e.target.value as any)}
-            className="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black"
-          >
-            <option value="todos">Todos os tipos</option>
-            <option value="receita">Receitas</option>
-            <option value="despesa">Despesas</option>
-          </select>
-          <select
-            value={filtroCategoria}
-            onChange={(e) => setFiltroCategoria(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black"
-          >
-            <option value="todas">Todas as categorias</option>
-            <option value="Alimentação">Alimentação</option>
-            <option value="Transporte">Transporte</option>
-            <option value="Moradia">Moradia</option>
-            <option value="Lazer">Lazer</option>
-            <option value="Saúde">Saúde</option>
-          </select>
+      {/* Resumo */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-4">
+          <p className="text-sm text-slate-400 mb-1">Receitas</p>
+          <p className="text-2xl font-bold text-green-400">
+            R${" "}
+            {totalReceitas.toLocaleString("pt-BR", {
+              minimumFractionDigits: 2,
+            })}
+          </p>
         </div>
-      </div>
-
-      {/* Resumo de Transações */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <div>
-            <p className="text-sm text-gray-600 mb-1">Período</p>
-            <p className="font-semibold text-gray-900">Últimos {filtroPeriodo} dias</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600 mb-1">Transações</p>
-            <p className="font-semibold text-gray-900">{transacoesFiltradas.length}</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600 mb-1">Receitas</p>
-            <p className="font-semibold text-green-600">
-              R$ {totalReceitas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-            </p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600 mb-1">Despesas</p>
-            <p className="font-semibold text-red-600">
-              R$ {totalDespesas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-            </p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600 mb-1">Saldo</p>
-            <p className={`font-semibold ${saldo >= 0 ? "text-green-600" : "text-red-600"}`}>
-              R$ {saldo.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-            </p>
-          </div>
+        <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-4">
+          <p className="text-sm text-slate-400 mb-1">Despesas</p>
+          <p className="text-2xl font-bold text-red-400">
+            R${" "}
+            {totalDespesas.toLocaleString("pt-BR", {
+              minimumFractionDigits: 2,
+            })}
+          </p>
+        </div>
+        <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-4">
+          <p className="text-sm text-slate-400 mb-1">Saldo</p>
+          <p
+            className={`text-2xl font-bold ${
+              saldo >= 0 ? "text-white" : "text-red-400"
+            }`}
+          >
+            R${" "}
+            {saldo.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+          </p>
         </div>
       </div>
 
       {/* Lista de Transações */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        {transacoesFiltradas.length === 0 ? (
-          <div className="p-12 text-center">
-            <Receipt className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Nenhuma transação encontrada
-            </h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Ajuste os filtros ou adicione uma nova transação
-            </p>
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="px-4 py-2 bg-black text-white rounded-lg text-sm font-semibold hover:bg-gray-800"
-            >
-              Adicionar Transação
-            </button>
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-200">
-            {transacoesFiltradas.map((transaction) => (
-              <div key={transaction.id} className="p-4 hover:bg-gray-50 transition-colors">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      transaction.tipo === "receita" ? "bg-green-100" : "bg-red-100"
-                    }`}>
-                      {transaction.tipo === "receita" ? (
-                        <ArrowUpCircle className="w-5 h-5 text-green-600" />
-                      ) : (
-                        <ArrowDownCircle className="w-5 h-5 text-red-600" />
-                      )}
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-900">{transaction.descricao}</p>
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <span>{transaction.categoria}</span>
-                        <span>•</span>
-                        <span>{format(new Date(transaction.data), "dd/MM/yyyy", { locale: ptBR })}</span>
-                        {transaction.parcelado && (
-                          <>
-                            <span>•</span>
-                            <span className="text-orange-600">{transaction.parcelas}</span>
-                          </>
-                        )}
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden">
+        {filteredTransactions.length > 0 ? (
+          <div className="divide-y divide-slate-700">
+            {filteredTransactions
+              .sort(
+                (a, b) =>
+                  new Date(b.data).getTime() - new Date(a.data).getTime()
+              )
+              .map((transaction) => (
+                <div
+                  key={transaction.id}
+                  className="p-4 hover:bg-slate-700/30 transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-1">
+                        <span className="text-white font-medium">
+                          {transaction.descricao}
+                        </span>
+                        <span className="text-xs px-2 py-1 bg-slate-700 rounded text-slate-300">
+                          {transaction.categoria}
+                        </span>
                       </div>
+                      <p className="text-sm text-slate-400">
+                        {new Date(transaction.data).toLocaleDateString(
+                          "pt-BR"
+                        )}
+                      </p>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <p className={`text-lg font-semibold ${
-                      transaction.tipo === "receita" ? "text-green-600" : "text-red-600"
-                    }`}>
-                      {transaction.tipo === "receita" ? "+" : "-"}R$ {transaction.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                    </p>
-                    <button
-                      onClick={() => onDeleteTransaction(transaction.id)}
-                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-4">
+                      <span
+                        className={`text-lg font-bold ${
+                          transaction.tipo === "receita"
+                            ? "text-green-400"
+                            : "text-red-400"
+                        }`}
+                      >
+                        {transaction.tipo === "receita" ? "+" : "-"}R${" "}
+                        {transaction.valor.toLocaleString("pt-BR", {
+                          minimumFractionDigits: 2,
+                        })}
+                      </span>
+                      <button
+                        onClick={() => onDelete(transaction.id)}
+                        className="p-2 hover:bg-red-500/20 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-400" />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
+          </div>
+        ) : (
+          <div className="p-12 text-center text-slate-400">
+            <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+            <p>Nenhuma transação encontrada neste período</p>
           </div>
         )}
       </div>
-
-      {/* Modal Adicionar Transação */}
-      {showAddModal && (
-        <AddTransactionModal
-          onClose={() => setShowAddModal(false)}
-          onAdd={onAddTransaction}
-        />
-      )}
     </div>
   );
 }
 
-// Modal Adicionar Transação
-function AddTransactionModal({
-  onClose,
-  onAdd,
-}: {
-  onClose: () => void;
-  onAdd: (transaction: Omit<Transaction, "id">) => void;
-}) {
-  const [tipo, setTipo] = useState<"receita" | "despesa">("despesa");
-  const [descricao, setDescricao] = useState("");
-  const [valor, setValor] = useState("");
-  const [categoria, setCategoria] = useState("Alimentação");
-  const [data, setData] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [parcelado, setParcelado] = useState(false);
-  const [parcelas, setParcelas] = useState("");
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onAdd({
-      descricao,
-      valor: parseFloat(valor),
-      tipo,
-      categoria,
-      data,
-      parcelado,
-      parcelas: parcelado ? parcelas : undefined,
-    });
-    onClose();
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-gray-900">Nova Transação</h2>
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setTipo("receita")}
-              className={`flex-1 py-3 rounded-lg font-medium transition-all ${
-                tipo === "receita"
-                  ? "bg-green-600 text-white"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
-            >
-              Receita
-            </button>
-            <button
-              type="button"
-              onClick={() => setTipo("despesa")}
-              className={`flex-1 py-3 rounded-lg font-medium transition-all ${
-                tipo === "despesa"
-                  ? "bg-red-600 text-white"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
-            >
-              Despesa
-            </button>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Descrição
-            </label>
-            <input
-              type="text"
-              value={descricao}
-              onChange={(e) => setDescricao(e.target.value)}
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black"
-              placeholder="Ex: Supermercado"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Valor
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              value={valor}
-              onChange={(e) => setValor(e.target.value)}
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black"
-              placeholder="0,00"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Categoria
-            </label>
-            <select
-              value={categoria}
-              onChange={(e) => setCategoria(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black"
-            >
-              <option>Alimentação</option>
-              <option>Transporte</option>
-              <option>Moradia</option>
-              <option>Lazer</option>
-              <option>Saúde</option>
-              <option>Salário</option>
-              <option>Renda Extra</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Data
-            </label>
-            <input
-              type="date"
-              value={data}
-              onChange={(e) => setData(e.target.value)}
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="parcelado"
-              checked={parcelado}
-              onChange={(e) => setParcelado(e.target.checked)}
-              className="w-4 h-4 text-black border-gray-300 rounded focus:ring-black"
-            />
-            <label htmlFor="parcelado" className="text-sm font-medium text-gray-700">
-              Compra parcelada
-            </label>
-          </div>
-
-          {parcelado && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Parcelas
-              </label>
-              <input
-                type="text"
-                value={parcelas}
-                onChange={(e) => setParcelas(e.target.value)}
-                placeholder="Ex: 3/12"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-black"
-              />
-            </div>
-          )}
-
-          <div className="flex gap-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              className="flex-1 px-4 py-3 bg-black text-white rounded-lg font-semibold hover:bg-gray-800"
-            >
-              Adicionar
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// Categorias Page
+// Categorias Page Component
 function CategoriasPage({ categories }: { categories: Category[] }) {
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Categorias</h2>
-        <button className="flex items-center gap-2 px-4 py-2 bg-black text-white rounded-lg text-sm font-semibold hover:bg-gray-800">
-          <Plus className="w-4 h-4" />
-          Nova Categoria
-        </button>
+      <div>
+        <h2 className="text-2xl font-bold text-white">Categorias</h2>
+        <p className="text-slate-400 text-sm">
+          Acompanhe seus gastos por categoria
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {categories.map((cat) => {
           const percentual = (cat.gasto / cat.orcamento) * 100;
           const restante = cat.orcamento - cat.gasto;
+
           return (
-            <div key={cat.id} className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+            <div
+              key={cat.id}
+              className="bg-slate-800/50 rounded-xl border border-slate-700 p-6"
+            >
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <div
@@ -871,34 +1197,31 @@ function CategoriasPage({ categories }: { categories: Category[] }) {
                     {cat.icone}
                   </div>
                   <div>
-                    <h3 className="font-semibold text-gray-900">{cat.nome}</h3>
-                    <p className="text-sm text-gray-600">{percentual.toFixed(1)}% usado</p>
+                    <h3 className="text-lg font-semibold text-white">
+                      {cat.nome}
+                    </h3>
+                    <p className="text-sm text-slate-400">
+                      {percentual.toFixed(1)}% usado
+                    </p>
                   </div>
-                </div>
-                <div className="flex gap-2">
-                  <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
                 </div>
               </div>
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Gasto</span>
-                  <span className="font-semibold text-gray-900">
+                  <span className="text-slate-400">Gasto</span>
+                  <span className="font-semibold text-white">
                     R$ {cat.gasto.toLocaleString("pt-BR")}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Orçamento</span>
-                  <span className="font-semibold text-gray-900">
+                  <span className="text-slate-400">Orçamento</span>
+                  <span className="font-semibold text-white">
                     R$ {cat.orcamento.toLocaleString("pt-BR")}
                   </span>
                 </div>
-                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+
+                <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all"
                     style={{
@@ -907,11 +1230,22 @@ function CategoriasPage({ categories }: { categories: Category[] }) {
                     }}
                   />
                 </div>
+
                 <div className="flex items-center justify-between text-sm">
-                  <span className={restante >= 0 ? "text-green-600" : "text-red-600"}>
-                    {restante >= 0 ? "Restante" : "Excedido"}
+                  <span
+                    className={
+                      restante >= 0 ? "text-green-400" : "text-red-400"
+                    }
+                  >
+                    {restante >= 0 ? "Disponível" : "Excedido"}
                   </span>
-                  <span className={`font-semibold ${restante >= 0 ? "text-green-600" : "text-red-600"}`}>
+                  <span
+                    className={
+                      restante >= 0
+                        ? "font-semibold text-green-400"
+                        : "font-semibold text-red-400"
+                    }
+                  >
                     R$ {Math.abs(restante).toLocaleString("pt-BR")}
                   </span>
                 </div>
@@ -924,142 +1258,516 @@ function CategoriasPage({ categories }: { categories: Category[] }) {
   );
 }
 
-// Configurações
-function ConfigPage({ userData }: { userData: UserData }) {
-  const router = useRouter();
+// Metas Page Component
+function MetasPage({
+  metas,
+  isPremium,
+  onAdd,
+  onAddValor,
+  onDelete,
+  onUpgrade,
+}: {
+  metas: Meta[];
+  isPremium: boolean;
+  onAdd: () => void;
+  onAddValor: (metaId: string, valor: number) => void;
+  onDelete: (id: string) => void;
+  onUpgrade: () => void;
+}) {
+  const [valorAdicionar, setValorAdicionar] = useState<{
+    [key: string]: string;
+  }>({});
 
-  const handleLogout = () => {
-    localStorage.removeItem("eixo_user");
-    router.push("/");
+  const handleAddValor = (metaId: string) => {
+    const valor = parseFloat(valorAdicionar[metaId] || "0");
+    if (valor > 0) {
+      onAddValor(metaId, valor);
+      setValorAdicionar({ ...valorAdicionar, [metaId]: "" });
+    }
   };
+
+  const canAddMeta = isPremium || metas.length < 1;
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-900">Configurações</h2>
-
-      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <p className="text-sm text-gray-600">Nome</p>
-          <p className="font-semibold text-gray-900">{userData.nome}</p>
+          <h2 className="text-2xl font-bold text-white">Metas</h2>
+          <p className="text-slate-400 text-sm">
+            Defina e acompanhe seus objetivos financeiros
+          </p>
         </div>
-        <div>
-          <p className="text-sm text-gray-600">Email</p>
-          <p className="font-semibold text-gray-900">{userData.email}</p>
-        </div>
-        <div>
-          <p className="text-sm text-gray-600">Perfil Financeiro</p>
-          <p className="font-semibold text-gray-900 capitalize">{userData.persona}</p>
-        </div>
+        <button
+          onClick={canAddMeta ? onAdd : onUpgrade}
+          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-800 rounded-lg hover:from-purple-700 hover:to-purple-900 transition-all"
+        >
+          {canAddMeta ? (
+            <>
+              <Plus className="w-4 h-4" />
+              <span className="text-sm font-semibold">Nova Meta</span>
+            </>
+          ) : (
+            <>
+              <Lock className="w-4 h-4" />
+              <span className="text-sm font-semibold">
+                Premium para mais metas
+              </span>
+            </>
+          )}
+        </button>
       </div>
 
-      <button
-        onClick={handleLogout}
-        className="w-full px-6 py-3 bg-red-50 border border-red-200 text-red-600 rounded-xl font-semibold hover:bg-red-100 transition-all"
-      >
-        Sair da conta
-      </button>
+      {!isPremium && (
+        <div className="bg-purple-900/20 border border-purple-500/30 rounded-xl p-4">
+          <div className="flex items-center gap-3">
+            <Lock className="w-5 h-5 text-purple-400" />
+            <p className="text-sm text-slate-300">
+              <span className="font-semibold text-purple-300">
+                Plano FREE:
+              </span>{" "}
+              1 meta ativa •{" "}
+              <span className="font-semibold text-purple-300">Premium:</span>{" "}
+              Metas ilimitadas
+            </p>
+          </div>
+        </div>
+      )}
+
+      {metas.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {metas.map((meta) => {
+            const percentual = (meta.valor_atual / meta.valor_total) * 100;
+            const restante = meta.valor_total - meta.valor_atual;
+            const diasRestantes = Math.ceil(
+              (new Date(meta.prazo).getTime() - new Date().getTime()) /
+                (1000 * 60 * 60 * 24)
+            );
+
+            return (
+              <div
+                key={meta.id}
+                className="bg-slate-800/50 rounded-xl border border-slate-700 p-6"
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-white mb-1">
+                      {meta.nome}
+                    </h3>
+                    <p className="text-sm text-slate-400">
+                      {diasRestantes > 0
+                        ? `${diasRestantes} dias restantes`
+                        : "Prazo vencido"}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => onDelete(meta.id)}
+                    className="p-2 hover:bg-red-500/20 rounded-lg transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4 text-red-400" />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-slate-400">Progresso</span>
+                      <span className="text-sm font-semibold text-white">
+                        {percentual.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-purple-600 to-purple-800 rounded-full transition-all"
+                        style={{ width: `${Math.min(percentual, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-sm">
+                    <div>
+                      <p className="text-slate-400">Guardado</p>
+                      <p className="text-lg font-bold text-white">
+                        R${" "}
+                        {meta.valor_atual.toLocaleString("pt-BR", {
+                          minimumFractionDigits: 2,
+                        })}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-slate-400">Meta</p>
+                      <p className="text-lg font-bold text-white">
+                        R${" "}
+                        {meta.valor_total.toLocaleString("pt-BR", {
+                          minimumFractionDigits: 2,
+                        })}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-700">
+                    <p className="text-sm text-slate-400 mb-2">
+                      Faltam R${" "}
+                      {restante.toLocaleString("pt-BR", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        value={valorAdicionar[meta.id] || ""}
+                        onChange={(e) =>
+                          setValorAdicionar({
+                            ...valorAdicionar,
+                            [meta.id]: e.target.value,
+                          })
+                        }
+                        placeholder="Valor"
+                        className="flex-1 px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm"
+                      />
+                      <button
+                        onClick={() => handleAddValor(meta.id)}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-12 text-center">
+          <Target className="w-12 h-12 mx-auto mb-3 text-slate-400 opacity-50" />
+          <p className="text-slate-400 mb-4">Nenhuma meta criada ainda</p>
+          <button
+            onClick={onAdd}
+            className="px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-800 rounded-lg hover:from-purple-700 hover:to-purple-900 transition-all text-white font-semibold"
+          >
+            Criar Primeira Meta
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
-// Paywall Modal
-function PaywallModal({ persona, onClose }: { persona: string; onClose: () => void }) {
-  const paywallContent: Record<string, { headline: string; benefits: string[] }> = {
-    equilibrista: {
-      headline: "Chega de gastar com medo.",
-      benefits: [
-        "Projeção de parcelamentos (3, 6, 12 meses)",
-        '"Posso Comprar?" ilimitado',
-        "Roast semanal personalizado",
-        "Alertas inteligentes antes de errar",
-        "Metas ilimitadas",
-      ],
-    },
-    planejador: {
-      headline: "Controle sem esforço.",
-      benefits: [
-        "Projeção automática de parcelamentos",
-        "Consultas ilimitadas",
-        "Roast semanal motivacional",
-        "Alertas que funcionam",
-        "Metas sem limite",
-      ],
-    },
-    investidor: {
-      headline: "Clareza patrimonial completa.",
-      benefits: [
-        "Visão completa de investimentos",
-        "Projeção de parcelamentos",
-        "Consultas ilimitadas",
-        "Roast semanal",
-        "Metas ilimitadas",
-      ],
-    },
-    gastador: {
-      headline: "Apoio na hora H.",
-      benefits: [
-        '"Posso Comprar?" ilimitado',
-        "Alertas antes de comprar",
-        "Projeção de impacto",
-        "Roast semanal",
-        "Metas ilimitadas",
-      ],
-    },
-    cansado: {
-      headline: "Pare de carregar isso sozinho.",
-      benefits: [
-        "Automação completa",
-        "Alertas inteligentes",
-        "Projeção de parcelamentos",
-        "Roast semanal",
-        "Metas ilimitadas",
-      ],
-    },
-  };
-
-  const content = paywallContent[persona] || paywallContent.equilibrista;
+// Posso Comprar Page Component
+function PossoComprarPage({
+  valor,
+  setValor,
+  descricao,
+  setDescricao,
+  resposta,
+  onAnalisar,
+  tentativas,
+  isPremium,
+  historico,
+  onUpgrade,
+}: {
+  valor: string;
+  setValor: (valor: string) => void;
+  descricao: string;
+  setDescricao: (descricao: string) => void;
+  resposta: { resposta: "sim" | "nao"; explicacao: string } | null;
+  onAnalisar: () => void;
+  tentativas: number;
+  isPremium: boolean;
+  historico: any[];
+  onUpgrade: () => void;
+}) {
+  const podeAnalisar = isPremium || tentativas < 1;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-lg w-full p-8 space-y-6 relative shadow-2xl">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
-        >
-          <X className="w-6 h-6" />
-        </button>
-
-        <div className="text-center space-y-2">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-black text-white rounded-full mb-4">
-            <Crown className="w-5 h-5" />
-            <span className="font-semibold">Premium</span>
-          </div>
-          <h2 className="text-3xl font-bold text-gray-900">{content.headline}</h2>
-        </div>
-
-        <div className="space-y-3">
-          {content.benefits.map((benefit, index) => (
-            <div key={index} className="flex items-start gap-3">
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-              <p className="text-gray-700">{benefit}</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
-          <p className="text-3xl font-bold text-gray-900 mb-1">
-            R$ 29,90<span className="text-lg text-gray-600">/mês</span>
-          </p>
-          <p className="text-sm text-gray-600">Cancele quando quiser</p>
-        </div>
-
-        <button className="w-full px-6 py-4 bg-black text-white rounded-xl font-semibold text-lg hover:bg-gray-800 transition-all shadow-lg">
-          Quero decidir com segurança
-        </button>
-
-        <p className="text-xs text-gray-500 text-center">
-          7 dias de garantia. Se não gostar, devolvemos seu dinheiro.
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-white">Posso Comprar?</h2>
+        <p className="text-slate-400 text-sm">
+          Analise se você pode fazer uma compra sem comprometer suas finanças
         </p>
+      </div>
+
+      {!isPremium && (
+        <div className="bg-purple-900/20 border border-purple-500/30 rounded-xl p-4">
+          <div className="flex items-center gap-3">
+            <Lock className="w-5 h-5 text-purple-400" />
+            <p className="text-sm text-slate-300">
+              <span className="font-semibold text-purple-300">
+                Plano FREE:
+              </span>{" "}
+              1 análise por dia ({tentativas}/1 usada) •{" "}
+              <span className="font-semibold text-purple-300">Premium:</span>{" "}
+              Análises ilimitadas
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Valor da compra
+            </label>
+            <input
+              type="number"
+              value={valor}
+              onChange={(e) => setValor(e.target.value)}
+              placeholder="R$ 0,00"
+              className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white text-lg"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Descrição (opcional)
+            </label>
+            <input
+              type="text"
+              value={descricao}
+              onChange={(e) => setDescricao(e.target.value)}
+              placeholder="Ex: Notebook novo"
+              className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white"
+            />
+          </div>
+
+          <button
+            onClick={podeAnalisar ? onAnalisar : onUpgrade}
+            disabled={!valor || parseFloat(valor) <= 0}
+            className="w-full py-3 bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-700 hover:to-purple-900 text-white font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {podeAnalisar ? "Analisar" : "Upgrade para mais análises"}
+          </button>
+        </div>
+      </div>
+
+      {resposta && (
+        <div
+          className={`rounded-xl border p-6 ${
+            resposta.resposta === "sim"
+              ? "bg-green-900/20 border-green-500/30"
+              : "bg-red-900/20 border-red-500/30"
+          }`}
+        >
+          <div className="flex items-start gap-4">
+            <div
+              className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
+                resposta.resposta === "sim" ? "bg-green-900" : "bg-red-900"
+              }`}
+            >
+              <span className="text-2xl">
+                {resposta.resposta === "sim" ? "✓" : "✗"}
+              </span>
+            </div>
+            <div className="flex-1">
+              <h3
+                className={`text-xl font-bold mb-2 ${
+                  resposta.resposta === "sim"
+                    ? "text-green-300"
+                    : "text-red-300"
+                }`}
+              >
+                {resposta.resposta === "sim"
+                  ? "Sim, você pode!"
+                  : "Não recomendamos"}
+              </h3>
+              <p className="text-slate-300 leading-relaxed">
+                {resposta.explicacao}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isPremium && historico.length > 0 && (
+        <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6">
+          <h3 className="text-lg font-semibold text-white mb-4">
+            Histórico de Análises
+          </h3>
+          <div className="space-y-3">
+            {historico.slice(0, 5).map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg"
+              >
+                <div className="flex-1">
+                  <p className="text-white font-medium">
+                    R${" "}
+                    {item.valor.toLocaleString("pt-BR", {
+                      minimumFractionDigits: 2,
+                    })}
+                  </p>
+                  {item.descricao && (
+                    <p className="text-sm text-slate-400">{item.descricao}</p>
+                  )}
+                  <p className="text-xs text-slate-500">
+                    {new Date(item.data).toLocaleDateString("pt-BR")}
+                  </p>
+                </div>
+                <span
+                  className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                    item.resposta === "sim"
+                      ? "bg-green-900/30 text-green-300"
+                      : "bg-red-900/30 text-red-300"
+                  }`}
+                >
+                  {item.resposta === "sim" ? "Sim" : "Não"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!isPremium && historico.length > 0 && (
+        <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-white mb-1">
+                Histórico Completo
+              </h3>
+              <p className="text-sm text-slate-400">
+                Veja todas as suas análises anteriores
+              </p>
+            </div>
+            <button
+              onClick={onUpgrade}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
+            >
+              <Lock className="w-4 h-4" />
+              <span className="text-sm font-semibold">Premium</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Configurações Page Component
+function ConfiguracoesPage({
+  userName,
+  setUserName,
+  isPremium,
+  onExport,
+  onUpgrade,
+}: {
+  userName: string;
+  setUserName: (name: string) => void;
+  isPremium: boolean;
+  onExport: (format: "pdf" | "csv") => void;
+  onUpgrade: () => void;
+}) {
+  const [editingName, setEditingName] = useState(false);
+  const [tempName, setTempName] = useState(userName);
+
+  const handleSaveName = () => {
+    setUserName(tempName);
+    localStorage.setItem("userName", tempName);
+    setEditingName(false);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-white">Configurações</h2>
+        <p className="text-slate-400 text-sm">
+          Gerencie suas preferências e dados
+        </p>
+      </div>
+
+      {/* Perfil */}
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6">
+        <h3 className="text-lg font-semibold text-white mb-4">Perfil</h3>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Nome
+            </label>
+            {editingName ? (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={tempName}
+                  onChange={(e) => setTempName(e.target.value)}
+                  className="flex-1 px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white"
+                />
+                <button
+                  onClick={handleSaveName}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors text-white font-semibold"
+                >
+                  Salvar
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
+                <span className="text-white">{userName}</span>
+                <button
+                  onClick={() => setEditingName(true)}
+                  className="text-sm text-purple-400 hover:text-purple-300"
+                >
+                  Editar
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Plano
+            </label>
+            <div className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg">
+              <div className="flex items-center gap-2">
+                {isPremium && <Crown className="w-5 h-5 text-purple-400" />}
+                <span className="text-white">
+                  {isPremium ? "Premium" : "Free"}
+                </span>
+              </div>
+              {!isPremium && (
+                <button
+                  onClick={onUpgrade}
+                  className="text-sm text-purple-400 hover:text-purple-300 font-semibold"
+                >
+                  Fazer upgrade
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Exportar Dados */}
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6">
+        <h3 className="text-lg font-semibold text-white mb-4">
+          Exportar Dados
+        </h3>
+        <p className="text-sm text-slate-400 mb-4">
+          Baixe suas transações e relatórios
+        </p>
+        <div className="flex gap-3">
+          <button
+            onClick={() => onExport("csv")}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg hover:bg-slate-700 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            <span className="text-sm font-semibold">Exportar CSV</span>
+          </button>
+          <button
+            onClick={() => onExport("pdf")}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg hover:bg-slate-700 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            <span className="text-sm font-semibold">
+              Exportar PDF {!isPremium && "🔒"}
+            </span>
+          </button>
+        </div>
+        {!isPremium && (
+          <p className="text-xs text-slate-500 mt-2">
+            Exportação em PDF disponível apenas no Premium
+          </p>
+        )}
       </div>
     </div>
   );

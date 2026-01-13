@@ -7,6 +7,40 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
+      {/* Header */}
+      <header className="absolute top-0 left-0 right-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <svg
+                viewBox="0 0 120 40"
+                className="h-10 w-auto"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <text
+                  x="10"
+                  y="30"
+                  fontFamily="system-ui, -apple-system, sans-serif"
+                  fontSize="32"
+                  fontWeight="700"
+                  fill="#2E004F"
+                  letterSpacing="-0.5"
+                >
+                  EIXO
+                </text>
+              </svg>
+            </div>
+            <button
+              onClick={() => router.push("/login")}
+              className="px-6 py-2 text-white border border-white/20 rounded-lg hover:bg-white/10 transition-all"
+            >
+              Entrar
+            </button>
+          </div>
+        </div>
+      </header>
+
       {/* Hero Section */}
       <div className="flex flex-col items-center justify-center min-h-screen px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto text-center space-y-8">

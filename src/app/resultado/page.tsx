@@ -63,9 +63,8 @@ function ResultadoContent() {
   const personaData = personasData[persona] || personasData.equilibrista;
 
   const handleCreateAccount = () => {
-    // Salvar persona no localStorage para usar depois
-    localStorage.setItem("eixo_persona", persona);
-    router.push("/criar-conta");
+    // Redirecionar para página de login/cadastro com parâmetro from=quiz
+    router.push("/login?from=quiz");
   };
 
   return (
@@ -73,14 +72,31 @@ function ResultadoContent() {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
         {/* Logo */}
         <div className="mb-12 sm:mb-16">
-          <h1 className="text-2xl sm:text-3xl font-bold">EIXO</h1>
+          <svg
+            viewBox="0 0 120 40"
+            className="h-10 w-auto"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <text
+              x="10"
+              y="30"
+              fontFamily="system-ui, -apple-system, sans-serif"
+              fontSize="32"
+              fontWeight="700"
+              fill="#8B5CF6"
+              letterSpacing="-0.5"
+            >
+              EIXO
+            </text>
+          </svg>
         </div>
 
         {/* Result Content */}
         <div className="space-y-8 sm:space-y-12">
           {/* Persona Badge */}
-          <div className="inline-block px-4 py-2 bg-cyan-400/10 border border-cyan-400/30 rounded-full">
-            <p className="text-cyan-400 text-sm sm:text-base font-medium">
+          <div className="inline-block px-4 py-2 bg-purple-400/10 border border-purple-400/30 rounded-full">
+            <p className="text-purple-400 text-sm sm:text-base font-medium">
               Seu perfil financeiro
             </p>
           </div>
@@ -98,7 +114,7 @@ function ResultadoContent() {
 
           {/* Persona Description */}
           <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6 sm:p-8 space-y-4">
-            <h3 className="text-xl sm:text-2xl font-bold text-cyan-400">
+            <h3 className="text-xl sm:text-2xl font-bold text-purple-400">
               {personaData.name}
             </h3>
             <p className="text-slate-300 text-base sm:text-lg leading-relaxed">

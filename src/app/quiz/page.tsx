@@ -2,269 +2,245 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 
-type Answer = "A" | "B" | "C" | "D" | "E";
+type Persona = 
+  | "Equilibrista Ansioso"
+  | "Planejador Frustrado"
+  | "Investidor Inseguro"
+  | "Gastador Consciente"
+  | "Cansado do Dinheiro";
 
-interface Question {
-  id: number;
-  question: string;
-  options: {
-    value: Answer;
-    text: string;
-  }[];
-}
-
-const questions: Question[] = [
+const perguntas = [
   {
     id: 1,
-    question: "Quando você pensa em dinheiro hoje, o que sente primeiro?",
-    options: [
-      { value: "A", text: "Ansiedade" },
-      { value: "B", text: "Cansaço" },
-      { value: "C", text: "Confusão" },
-      { value: "D", text: "Vontade de fazer certo, mas medo" },
-      { value: "E", text: "Tranquilidade… até a fatura chegar" },
+    pergunta: "Quando você pensa em dinheiro hoje, o que sente primeiro?",
+    opcoes: [
+      { texto: "Ansiedade", persona: "Equilibrista Ansioso" as Persona },
+      { texto: "Cansaço", persona: "Cansado do Dinheiro" as Persona },
+      { texto: "Confusão", persona: "Investidor Inseguro" as Persona },
+      { texto: "Vontade de fazer certo, mas medo", persona: "Gastador Consciente" as Persona },
+      { texto: "Tranquilidade… até a fatura chegar", persona: "Equilibrista Ansioso" as Persona },
     ],
   },
   {
     id: 2,
-    question: "Seu cartão de crédito hoje é mais:",
-    options: [
-      { value: "A", text: "Um aliado até virar susto" },
-      { value: "B", text: "Algo que evito olhar" },
-      { value: "C", text: "Uma ferramenta que uso, mas não domino" },
-      { value: "D", text: "Algo que uso sem pensar muito" },
-      { value: "E", text: "Algo que me dá dor de cabeça" },
+    pergunta: "Seu cartão de crédito hoje é mais:",
+    opcoes: [
+      { texto: "Um aliado até virar susto", persona: "Equilibrista Ansioso" as Persona },
+      { texto: "Algo que evito olhar", persona: "Cansado do Dinheiro" as Persona },
+      { texto: "Uma ferramenta que uso, mas não domino", persona: "Planejador Frustrado" as Persona },
+      { texto: "Algo que uso sem pensar muito", persona: "Gastador Consciente" as Persona },
+      { texto: "Algo que me dá dor de cabeça", persona: "Cansado do Dinheiro" as Persona },
     ],
   },
   {
     id: 3,
-    question: "Quando você parcela uma compra:",
-    options: [
-      { value: "A", text: "Nem lembro que vai cair depois" },
-      { value: "B", text: "Sei que vai cair, mas não sei o impacto" },
-      { value: "C", text: "Tento calcular, mas nunca fica claro" },
-      { value: "D", text: "Só penso no valor da parcela" },
-      { value: "E", text: "Evito parcelar, mas às vezes não dá" },
+    pergunta: "Quando você parcela uma compra:",
+    opcoes: [
+      { texto: "Nem lembro que vai cair depois", persona: "Equilibrista Ansioso" as Persona },
+      { texto: "Sei que vai cair, mas não sei o impacto", persona: "Equilibrista Ansioso" as Persona },
+      { texto: "Tento calcular, mas nunca fica claro", persona: "Planejador Frustrado" as Persona },
+      { texto: "Só penso no valor da parcela", persona: "Gastador Consciente" as Persona },
+      { texto: "Evito parcelar, mas às vezes não dá", persona: "Cansado do Dinheiro" as Persona },
     ],
   },
   {
     id: 4,
-    question: "Qual frase mais parece com você?",
-    options: [
-      { value: "A", text: "Já tentei me organizar várias vezes" },
-      { value: "B", text: "Começo animado e abandono" },
-      { value: "C", text: "Tenho planilha/app, mas quase não uso" },
-      { value: "D", text: "Nunca organizei de verdade" },
-      { value: "E", text: "Pensar em dinheiro me esgota" },
+    pergunta: "Qual frase mais parece com você?",
+    opcoes: [
+      { texto: "Já tentei me organizar várias vezes", persona: "Planejador Frustrado" as Persona },
+      { texto: "Começo animado e abandono", persona: "Planejador Frustrado" as Persona },
+      { texto: "Tenho planilha/app, mas quase não uso", persona: "Investidor Inseguro" as Persona },
+      { texto: "Nunca organizei de verdade", persona: "Gastador Consciente" as Persona },
+      { texto: "Pensar em dinheiro me esgota", persona: "Cansado do Dinheiro" as Persona },
     ],
   },
   {
     id: 5,
-    question: "Sobre investir:",
-    options: [
-      { value: "A", text: "Já invisto, mas não sei se estou indo bem" },
-      { value: "B", text: "Quero investir, mas me sinto atrasado" },
-      { value: "C", text: "Invisto, mas não acompanho" },
-      { value: "D", text: "Ainda não invisto" },
-      { value: "E", text: "Invisto e isso me deixa ansioso" },
+    pergunta: "Sobre investir:",
+    opcoes: [
+      { texto: "Já invisto, mas não sei se estou indo bem", persona: "Investidor Inseguro" as Persona },
+      { texto: "Quero investir, mas me sinto atrasado", persona: "Investidor Inseguro" as Persona },
+      { texto: "Invisto, mas não acompanho", persona: "Planejador Frustrado" as Persona },
+      { texto: "Ainda não invisto", persona: "Gastador Consciente" as Persona },
+      { texto: "Invisto e isso me deixa ansioso", persona: "Equilibrista Ansioso" as Persona },
     ],
   },
   {
     id: 6,
-    question: "Ao pensar numa compra média (R$300–800):",
-    options: [
-      { value: "A", text: "Compro e penso depois" },
-      { value: "B", text: "Penso muito e mesmo assim não sei" },
-      { value: "C", text: "Compro com culpa" },
-      { value: "D", text: "Evito por medo" },
-      { value: "E", text: "Compro e torço pra dar certo" },
+    pergunta: "Ao pensar numa compra média (R$300–800):",
+    opcoes: [
+      { texto: "Compro e penso depois", persona: "Gastador Consciente" as Persona },
+      { texto: "Penso muito e mesmo assim não sei", persona: "Equilibrista Ansioso" as Persona },
+      { texto: "Compro com culpa", persona: "Equilibrista Ansioso" as Persona },
+      { texto: "Evito por medo", persona: "Cansado do Dinheiro" as Persona },
+      { texto: "Compro e torço pra dar certo", persona: "Planejador Frustrado" as Persona },
     ],
   },
   {
     id: 7,
-    question: "Você tem metas financeiras hoje?",
-    options: [
-      { value: "A", text: "Tenho, mas atraso" },
-      { value: "B", text: "Tenho, mas não acompanho" },
-      { value: "C", text: "Tenho ideias soltas" },
-      { value: "D", text: "Não tenho" },
-      { value: "E", text: "Tenho, mas me sinto longe" },
+    pergunta: "Você tem metas financeiras hoje?",
+    opcoes: [
+      { texto: "Tenho, mas atraso", persona: "Planejador Frustrado" as Persona },
+      { texto: "Tenho, mas não acompanho", persona: "Planejador Frustrado" as Persona },
+      { texto: "Tenho ideias soltas", persona: "Investidor Inseguro" as Persona },
+      { texto: "Não tenho", persona: "Gastador Consciente" as Persona },
+      { texto: "Tenho, mas me sinto longe", persona: "Equilibrista Ansioso" as Persona },
     ],
   },
   {
     id: 8,
-    question: "O que você mais gostaria de ouvir de um app financeiro?",
-    options: [
-      { value: "A", text: '"Pode gastar, isso não vai te prejudicar"' },
-      { value: "B", text: '"Não gasta agora, você vai se agradecer depois"' },
-      { value: "C", text: '"Você está indo melhor do que imagina"' },
-      { value: "D", text: '"Vamos organizar isso sem complicação"' },
-      { value: "E", text: '"Relaxa, tá tudo sob controle"' },
+    pergunta: "O que você mais gostaria de ouvir de um app financeiro?",
+    opcoes: [
+      { texto: "\"Pode gastar, isso não vai te prejudicar\"", persona: "Equilibrista Ansioso" as Persona },
+      { texto: "\"Não gasta agora, você vai se agradecer depois\"", persona: "Gastador Consciente" as Persona },
+      { texto: "\"Você está indo melhor do que imagina\"", persona: "Investidor Inseguro" as Persona },
+      { texto: "\"Vamos organizar isso sem complicação\"", persona: "Planejador Frustrado" as Persona },
+      { texto: "\"Relaxa, tá tudo sob controle\"", persona: "Cansado do Dinheiro" as Persona },
     ],
   },
 ];
 
+// Mapeamento de personas para URLs
+const personaToUrl: Record<Persona, string> = {
+  "Equilibrista Ansioso": "equilibrista",
+  "Planejador Frustrado": "planejador",
+  "Investidor Inseguro": "investidor",
+  "Gastador Consciente": "gastador",
+  "Cansado do Dinheiro": "cansado",
+};
+
 export default function QuizPage() {
   const router = useRouter();
-  const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [answers, setAnswers] = useState<Answer[]>([]);
-  const [selectedAnswer, setSelectedAnswer] = useState<Answer | null>(null);
+  const [etapaAtual, setEtapaAtual] = useState(0);
+  const [respostas, setRespostas] = useState<Persona[]>([]);
 
-  const handleAnswer = () => {
-    if (!selectedAnswer) return;
+  const handleResposta = (persona: Persona) => {
+    const novasRespostas = [...respostas, persona];
+    setRespostas(novasRespostas);
 
-    const newAnswers = [...answers, selectedAnswer];
-    setAnswers(newAnswers);
-
-    if (currentQuestion < questions.length - 1) {
-      setCurrentQuestion(currentQuestion + 1);
-      setSelectedAnswer(null);
+    if (etapaAtual < perguntas.length - 1) {
+      setEtapaAtual(etapaAtual + 1);
     } else {
-      // Quiz completo - calcular persona e redirecionar
-      const persona = calculatePersona(newAnswers);
-      router.push(`/resultado?persona=${persona}`);
+      // Calcular persona final com lógica de pontuação
+      const contagem: Record<Persona, number> = {
+        "Equilibrista Ansioso": 0,
+        "Planejador Frustrado": 0,
+        "Investidor Inseguro": 0,
+        "Gastador Consciente": 0,
+        "Cansado do Dinheiro": 0,
+      };
+
+      novasRespostas.forEach((p) => {
+        contagem[p]++;
+      });
+
+      // Encontrar a persona com maior pontuação
+      let personaFinal: Persona = "Equilibrista Ansioso";
+      let maxPontos = 0;
+
+      // Ordem de prioridade para desempate
+      const prioridade: Persona[] = [
+        "Equilibrista Ansioso",
+        "Planejador Frustrado",
+        "Investidor Inseguro",
+        "Gastador Consciente",
+        "Cansado do Dinheiro",
+      ];
+
+      prioridade.forEach((p) => {
+        if (contagem[p] > maxPontos) {
+          maxPontos = contagem[p];
+          personaFinal = p;
+        }
+      });
+
+      // Salvar no localStorage para usar depois no cadastro
+      localStorage.setItem("userPersona", personaFinal);
+      
+      // Redirecionar para página de resultado com a persona
+      const personaUrl = personaToUrl[personaFinal];
+      router.push(`/resultado?persona=${personaUrl}`);
     }
   };
 
-  const progress = ((currentQuestion + 1) / questions.length) * 100;
+  const handleVoltar = () => {
+    if (etapaAtual > 0) {
+      setEtapaAtual(etapaAtual - 1);
+      setRespostas(respostas.slice(0, -1));
+    } else {
+      router.push("/");
+    }
+  };
+
+  const perguntaAtual = perguntas[etapaAtual];
+  const progresso = ((etapaAtual + 1) / perguntas.length) * 100;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-        {/* Header */}
-        <div className="mb-8 sm:mb-12">
-          <h1 className="text-2xl sm:text-3xl font-bold mb-2">EIXO</h1>
-          <p className="text-slate-400 text-sm sm:text-base">
-            Pergunta {currentQuestion + 1} de {questions.length}
-          </p>
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white flex items-center justify-center px-4 py-8">
+      <div className="w-full max-w-2xl">
+        {/* Botão Voltar */}
+        <button
+          onClick={handleVoltar}
+          className="mb-6 flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5" />
+          {etapaAtual > 0 ? "Pergunta anterior" : "Voltar"}
+        </button>
 
-        {/* Progress Bar */}
-        <div className="mb-8 sm:mb-12">
-          <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 transition-all duration-500 ease-out"
-              style={{ width: `${progress}%` }}
-            />
+        {/* Card do Quiz */}
+        <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-2xl p-8 shadow-2xl">
+          {/* Progresso */}
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-slate-400">
+                Pergunta {etapaAtual + 1} de {perguntas.length}
+              </span>
+              <span className="text-sm text-slate-400">{progresso.toFixed(0)}%</span>
+            </div>
+            <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-purple-600 to-purple-800 transition-all duration-500"
+                style={{ width: `${progresso}%` }}
+              />
+            </div>
           </div>
-        </div>
 
-        {/* Question */}
-        <div className="space-y-6 sm:space-y-8">
-          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold leading-tight">
-            {questions[currentQuestion].question}
-          </h2>
+          {/* Pergunta */}
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold text-white mb-2">
+              {perguntaAtual.pergunta}
+            </h2>
+            <p className="text-slate-400 text-sm">
+              Escolha a opção que mais se aproxima da sua realidade
+            </p>
+          </div>
 
-          {/* Options */}
-          <div className="space-y-3 sm:space-y-4">
-            {questions[currentQuestion].options.map((option) => (
+          {/* Opções */}
+          <div className="space-y-3">
+            {perguntaAtual.opcoes.map((opcao, index) => (
               <button
-                key={option.value}
-                onClick={() => setSelectedAnswer(option.value)}
-                className={`w-full text-left px-6 py-4 sm:px-8 sm:py-5 rounded-2xl border-2 transition-all duration-200 ${
-                  selectedAnswer === option.value
-                    ? "border-cyan-400 bg-cyan-400/10 text-white"
-                    : "border-slate-700 bg-slate-800/50 text-slate-300 hover:border-slate-600 hover:bg-slate-800"
-                }`}
+                key={index}
+                onClick={() => handleResposta(opcao.persona)}
+                className="w-full p-5 bg-slate-900/50 border border-slate-600 rounded-xl text-left hover:bg-slate-700/50 hover:border-purple-500 transition-all duration-300 group"
               >
-                <span className="text-base sm:text-lg">{option.text}</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-white font-medium group-hover:text-purple-300 transition-colors">
+                    {opcao.texto}
+                  </span>
+                  <ArrowRight className="w-5 h-5 text-slate-500 group-hover:text-purple-400 transition-colors" />
+                </div>
               </button>
             ))}
           </div>
-
-          {/* Next Button */}
-          <div className="pt-6 sm:pt-8">
-            <button
-              onClick={handleAnswer}
-              disabled={!selectedAnswer}
-              className={`w-full sm:w-auto px-8 sm:px-12 py-4 sm:py-5 text-lg sm:text-xl font-semibold rounded-full transition-all duration-300 ${
-                selectedAnswer
-                  ? "bg-white text-slate-950 hover:scale-105 hover:shadow-2xl hover:shadow-white/20"
-                  : "bg-slate-700 text-slate-500 cursor-not-allowed"
-              }`}
-            >
-              {currentQuestion < questions.length - 1 ? "Próxima" : "Ver resultado"}
-            </button>
-          </div>
         </div>
+
+        {/* Informação adicional */}
+        <p className="text-center text-slate-500 text-sm mt-6">
+          Suas respostas nos ajudam a personalizar sua experiência
+        </p>
       </div>
     </div>
   );
-}
-
-// Lógica de cálculo de persona
-function calculatePersona(answers: Answer[]): string {
-  const scoring: Record<string, number> = {
-    equilibrista: 0,
-    planejador: 0,
-    investidor: 0,
-    gastador: 0,
-    cansado: 0,
-  };
-
-  // Q1
-  if (answers[0] === "A" || answers[0] === "E") scoring.equilibrista++;
-  if (answers[0] === "B") scoring.cansado++;
-  if (answers[0] === "C") scoring.investidor++;
-  if (answers[0] === "D") scoring.gastador++;
-
-  // Q2
-  if (answers[1] === "A") scoring.equilibrista++;
-  if (answers[1] === "B" || answers[1] === "E") scoring.cansado++;
-  if (answers[1] === "C") scoring.planejador++;
-  if (answers[1] === "D") scoring.gastador++;
-
-  // Q3
-  if (answers[2] === "A" || answers[2] === "B") scoring.equilibrista++;
-  if (answers[2] === "C") scoring.planejador++;
-  if (answers[2] === "D") scoring.gastador++;
-  if (answers[2] === "E") scoring.cansado++;
-
-  // Q4
-  if (answers[3] === "A" || answers[3] === "B") scoring.planejador++;
-  if (answers[3] === "C") scoring.investidor++;
-  if (answers[3] === "D") scoring.gastador++;
-  if (answers[3] === "E") scoring.cansado++;
-
-  // Q5
-  if (answers[4] === "A" || answers[4] === "B") scoring.investidor++;
-  if (answers[4] === "C") scoring.planejador++;
-  if (answers[4] === "D") scoring.gastador++;
-  if (answers[4] === "E") scoring.equilibrista++;
-
-  // Q6
-  if (answers[5] === "A") scoring.gastador++;
-  if (answers[5] === "B" || answers[5] === "C") scoring.equilibrista++;
-  if (answers[5] === "D") scoring.cansado++;
-  if (answers[5] === "E") scoring.planejador++;
-
-  // Q7
-  if (answers[6] === "A" || answers[6] === "B") scoring.planejador++;
-  if (answers[6] === "C") scoring.investidor++;
-  if (answers[6] === "D") scoring.gastador++;
-  if (answers[6] === "E") scoring.equilibrista++;
-
-  // Q8
-  if (answers[7] === "A") scoring.equilibrista++;
-  if (answers[7] === "B") scoring.gastador++;
-  if (answers[7] === "C") scoring.investidor++;
-  if (answers[7] === "D") scoring.planejador++;
-  if (answers[7] === "E") scoring.cansado++;
-
-  // Encontrar maior pontuação
-  const maxScore = Math.max(...Object.values(scoring));
-  const winners = Object.entries(scoring)
-    .filter(([_, score]) => score === maxScore)
-    .map(([persona]) => persona);
-
-  // Regra de desempate
-  const priority = ["equilibrista", "planejador", "investidor", "gastador", "cansado"];
-  for (const persona of priority) {
-    if (winners.includes(persona)) {
-      return persona;
-    }
-  }
-
-  return "equilibrista"; // fallback
 }
