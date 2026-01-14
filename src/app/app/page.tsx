@@ -25,6 +25,8 @@ import {
   BarChart3,
   PieChart as PieChartIcon,
   TrendingUp,
+  Edit2,
+  Save,
 } from "lucide-react";
 import {
   BarChart,
@@ -76,6 +78,7 @@ export default function AppPage() {
   const [isPremium, setIsPremium] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
   const [userName, setUserName] = useState("Usuário");
+  const [isLoadingUser, setIsLoadingUser] = useState(true);
 
   // Estados para transações
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -107,6 +110,15 @@ export default function AppPage() {
     prazo: "",
   });
 
+  // Modal de categoria
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [newCategory, setNewCategory] = useState({
+    nome: "",
+    orcamento: "",
+    cor: "#10B981",
+    icone: "📦",
+  });
+
   // Filtro de extrato
   const [filtroExtrato, setFiltroExtrato] = useState("30");
 
@@ -121,34 +133,78 @@ export default function AppPage() {
   const [tentativasPossoComprar, setTentativasPossoComprar] = useState(0);
   const [historicoPossoComprar, setHistoricoPossoComprar] = useState<any[]>([]);
 
+  // Buscar dados do usuário autenticado no Supabase
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        
+        if (error) {
+          console.error("Erro ao buscar usuário:", error);
+          router.push("/login");
+          return;
+        }
+
+        if (!user) {
+          router.push("/login");
+          return;
+        }
+
+        // Buscar dados do perfil do usuário na tabela users
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('nome, is_premium')
+          .eq('id', user.id)
+          .single();
+
+        if (userError) {
+          console.error("Erro ao buscar dados do usuário:", userError);
+          // Se não encontrar na tabela users, usar o email como nome
+          const emailName = user.email?.split('@')[0] || 'Usuário';
+          setUserName(emailName.charAt(0).toUpperCase() + emailName.slice(1));
+        } else if (userData) {
+          setUserName(userData.nome || user.email?.split('@')[0] || 'Usuário');
+          setIsPremium(userData.is_premium || false);
+        }
+      } catch (error) {
+        console.error("Erro ao verificar autenticação:", error);
+        router.push("/login");
+      } finally {
+        setIsLoadingUser(false);
+      }
+    };
+
+    fetchUserData();
+  }, [router]);
+
   // Carregar dados do localStorage
   useEffect(() => {
+    if (isLoadingUser) return;
+
     const savedTransactions = localStorage.getItem("transactions");
     const savedCategories = localStorage.getItem("categories");
     const savedMetas = localStorage.getItem("metas");
-    const savedPremium = localStorage.getItem("isPremium");
-    const savedName = localStorage.getItem("userName");
     const savedTentativas = localStorage.getItem("tentativasPossoComprar");
     const savedHistorico = localStorage.getItem("historicoPossoComprar");
 
     if (savedTransactions) setTransactions(JSON.parse(savedTransactions));
     if (savedCategories) setCategories(JSON.parse(savedCategories));
     if (savedMetas) setMetas(JSON.parse(savedMetas));
-    if (savedPremium) setIsPremium(JSON.parse(savedPremium));
-    if (savedName) setUserName(savedName);
     if (savedTentativas) setTentativasPossoComprar(JSON.parse(savedTentativas));
     if (savedHistorico) setHistoricoPossoComprar(JSON.parse(savedHistorico));
-  }, []);
+  }, [isLoadingUser]);
 
   // Salvar dados no localStorage
   useEffect(() => {
+    if (isLoadingUser) return;
+
     localStorage.setItem("transactions", JSON.stringify(transactions));
     localStorage.setItem("categories", JSON.stringify(categories));
     localStorage.setItem("metas", JSON.stringify(metas));
     localStorage.setItem("isPremium", JSON.stringify(isPremium));
     localStorage.setItem("tentativasPossoComprar", JSON.stringify(tentativasPossoComprar));
     localStorage.setItem("historicoPossoComprar", JSON.stringify(historicoPossoComprar));
-  }, [transactions, categories, metas, isPremium, tentativasPossoComprar, historicoPossoComprar]);
+  }, [transactions, categories, metas, isPremium, tentativasPossoComprar, historicoPossoComprar, isLoadingUser]);
 
   // Atualizar gastos das categorias
   useEffect(() => {
@@ -214,6 +270,33 @@ export default function AppPage() {
 
   const handleDeleteMeta = (id: string) => {
     setMetas(metas.filter((m) => m.id !== id));
+  };
+
+  const handleAddCategory = () => {
+    const category: Category = {
+      id: Date.now().toString(),
+      nome: newCategory.nome,
+      cor: newCategory.cor,
+      icone: newCategory.icone,
+      orcamento: parseFloat(newCategory.orcamento),
+      gasto: 0,
+    };
+
+    setCategories([...categories, category]);
+    setShowCategoryModal(false);
+    setNewCategory({ nome: "", orcamento: "", cor: "#10B981", icone: "📦" });
+  };
+
+  const handleUpdateCategoryBudget = (categoryId: string, newBudget: number) => {
+    setCategories(
+      categories.map((cat) =>
+        cat.id === categoryId ? { ...cat, orcamento: newBudget } : cat
+      )
+    );
+  };
+
+  const handleDeleteCategory = (id: string) => {
+    setCategories(categories.filter((c) => c.id !== id));
   };
 
   const handlePossoComprar = () => {
@@ -298,6 +381,17 @@ export default function AppPage() {
   };
 
   const filteredTransactions = getFilteredTransactions();
+
+  if (isLoadingUser) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-400">Carregando...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
@@ -397,7 +491,12 @@ export default function AppPage() {
         )}
 
         {activeTab === "categorias" && (
-          <CategoriasPage categories={categories} />
+          <CategoriasPage
+            categories={categories}
+            onAdd={() => setShowCategoryModal(true)}
+            onUpdateBudget={handleUpdateCategoryBudget}
+            onDelete={handleDeleteCategory}
+          />
         )}
 
         {activeTab === "metas" && (
@@ -611,6 +710,100 @@ export default function AppPage() {
         </div>
       )}
 
+      {/* Modal de Categoria */}
+      {showCategoryModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-2xl p-6 max-w-md w-full border border-slate-700">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-white">Nova Categoria</h2>
+              <button
+                onClick={() => setShowCategoryModal(false)}
+                className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Nome
+                </label>
+                <input
+                  type="text"
+                  value={newCategory.nome}
+                  onChange={(e) =>
+                    setNewCategory({ ...newCategory, nome: e.target.value })
+                  }
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white"
+                  placeholder="Ex: Educação"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Orçamento Mensal
+                </label>
+                <input
+                  type="number"
+                  value={newCategory.orcamento}
+                  onChange={(e) =>
+                    setNewCategory({ ...newCategory, orcamento: e.target.value })
+                  }
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white"
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Ícone (emoji)
+                </label>
+                <input
+                  type="text"
+                  value={newCategory.icone}
+                  onChange={(e) =>
+                    setNewCategory({ ...newCategory, icone: e.target.value })
+                  }
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-center text-2xl"
+                  placeholder="📦"
+                  maxLength={2}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Cor
+                </label>
+                <div className="flex gap-2">
+                  {["#10B981", "#3B82F6", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899"].map(
+                    (color) => (
+                      <button
+                        key={color}
+                        onClick={() => setNewCategory({ ...newCategory, cor: color })}
+                        className={`w-10 h-10 rounded-lg transition-all ${
+                          newCategory.cor === color
+                            ? "ring-2 ring-white ring-offset-2 ring-offset-slate-800"
+                            : ""
+                        }`}
+                        style={{ backgroundColor: color }}
+                      />
+                    )
+                  )}
+                </div>
+              </div>
+
+              <button
+                onClick={handleAddCategory}
+                className="w-full py-3 bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-700 hover:to-purple-900 text-white font-semibold rounded-lg transition-all"
+              >
+                Criar Categoria
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal Paywall */}
       {showPaywall && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -708,14 +901,49 @@ function DashboardPage({
       ? ((saldoTotal / totalReceitas) * 100).toFixed(1)
       : "0";
 
-  const fluxoCaixaData = [
-    { mes: "Jan", receitas: 5800, despesas: 3200 },
-    { mes: "Fev", receitas: 5000, despesas: 3800 },
-    { mes: "Mar", receitas: 6200, despesas: 3500 },
-    { mes: "Abr", receitas: 5500, despesas: 4000 },
-    { mes: "Mai", receitas: 5800, despesas: 3600 },
-    { mes: "Jun", receitas: 6000, despesas: 3400 },
-  ];
+  // Calcular fluxo de caixa mensal com dados reais
+  const getFluxoCaixaData = () => {
+    const meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun"];
+    const hoje = new Date();
+    const fluxoData = [];
+
+    for (let i = 5; i >= 0; i--) {
+      const mesAtual = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+      const mesProximo = new Date(hoje.getFullYear(), hoje.getMonth() - i + 1, 1);
+      
+      const receitasMes = transactions
+        .filter((t) => {
+          const dataTransacao = new Date(t.data);
+          return (
+            t.tipo === "receita" &&
+            dataTransacao >= mesAtual &&
+            dataTransacao < mesProximo
+          );
+        })
+        .reduce((acc, t) => acc + t.valor, 0);
+
+      const despesasMes = transactions
+        .filter((t) => {
+          const dataTransacao = new Date(t.data);
+          return (
+            t.tipo === "despesa" &&
+            dataTransacao >= mesAtual &&
+            dataTransacao < mesProximo
+          );
+        })
+        .reduce((acc, t) => acc + t.valor, 0);
+
+      fluxoData.push({
+        mes: meses[mesAtual.getMonth()],
+        receitas: receitasMes,
+        despesas: despesasMes,
+      });
+    }
+
+    return fluxoData;
+  };
+
+  const fluxoCaixaData = getFluxoCaixaData();
 
   const gastosPorCategoria = categories
     .filter((cat) => cat.gasto > 0)
@@ -1168,14 +1396,50 @@ function ExtratoPage({
 }
 
 // Categorias Page Component
-function CategoriasPage({ categories }: { categories: Category[] }) {
+function CategoriasPage({
+  categories,
+  onAdd,
+  onUpdateBudget,
+  onDelete,
+}: {
+  categories: Category[];
+  onAdd: () => void;
+  onUpdateBudget: (categoryId: string, newBudget: number) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [editingBudget, setEditingBudget] = useState<string | null>(null);
+  const [tempBudget, setTempBudget] = useState<string>("");
+
+  const handleStartEdit = (categoryId: string, currentBudget: number) => {
+    setEditingBudget(categoryId);
+    setTempBudget(currentBudget.toString());
+  };
+
+  const handleSaveBudget = (categoryId: string) => {
+    const newBudget = parseFloat(tempBudget);
+    if (!isNaN(newBudget) && newBudget > 0) {
+      onUpdateBudget(categoryId, newBudget);
+    }
+    setEditingBudget(null);
+    setTempBudget("");
+  };
+
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-white">Categorias</h2>
-        <p className="text-slate-400 text-sm">
-          Acompanhe seus gastos por categoria
-        </p>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Categorias</h2>
+          <p className="text-slate-400 text-sm">
+            Gerencie suas categorias e orçamentos
+          </p>
+        </div>
+        <button
+          onClick={onAdd}
+          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-800 rounded-lg hover:from-purple-700 hover:to-purple-900 transition-all"
+        >
+          <Plus className="w-4 h-4" />
+          <span className="text-sm font-semibold">Nova Categoria</span>
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1205,6 +1469,12 @@ function CategoriasPage({ categories }: { categories: Category[] }) {
                     </p>
                   </div>
                 </div>
+                <button
+                  onClick={() => onDelete(cat.id)}
+                  className="p-2 hover:bg-red-500/20 rounded-lg transition-colors"
+                >
+                  <Trash2 className="w-4 h-4 text-red-400" />
+                </button>
               </div>
 
               <div className="space-y-3">
@@ -1216,9 +1486,35 @@ function CategoriasPage({ categories }: { categories: Category[] }) {
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-slate-400">Orçamento</span>
-                  <span className="font-semibold text-white">
-                    R$ {cat.orcamento.toLocaleString("pt-BR")}
-                  </span>
+                  {editingBudget === cat.id ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        value={tempBudget}
+                        onChange={(e) => setTempBudget(e.target.value)}
+                        className="w-24 px-2 py-1 bg-slate-900 border border-slate-600 rounded text-white text-sm"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => handleSaveBudget(cat.id)}
+                        className="p-1 hover:bg-green-500/20 rounded transition-colors"
+                      >
+                        <Save className="w-4 h-4 text-green-400" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-white">
+                        R$ {cat.orcamento.toLocaleString("pt-BR")}
+                      </span>
+                      <button
+                        onClick={() => handleStartEdit(cat.id, cat.orcamento)}
+                        className="p-1 hover:bg-purple-500/20 rounded transition-colors"
+                      >
+                        <Edit2 className="w-4 h-4 text-purple-400" />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
@@ -1662,10 +1958,30 @@ function ConfiguracoesPage({
   const [editingName, setEditingName] = useState(false);
   const [tempName, setTempName] = useState(userName);
 
-  const handleSaveName = () => {
-    setUserName(tempName);
-    localStorage.setItem("userName", tempName);
-    setEditingName(false);
+  const handleSaveName = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (user) {
+        // Atualizar nome na tabela users
+        const { error } = await supabase
+          .from('users')
+          .update({ nome: tempName })
+          .eq('id', user.id);
+
+        if (error) {
+          console.error("Erro ao atualizar nome:", error);
+          alert("Erro ao atualizar nome. Tente novamente.");
+          return;
+        }
+      }
+
+      setUserName(tempName);
+      setEditingName(false);
+    } catch (error) {
+      console.error("Erro ao salvar nome:", error);
+      alert("Erro ao salvar nome. Tente novamente.");
+    }
   };
 
   return (
