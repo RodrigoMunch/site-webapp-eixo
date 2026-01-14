@@ -32,6 +32,13 @@ export default function LoginPage() {
     }
   }, []);
 
+  // Sincronizar com parâmetro from=quiz (ÚNICO useEffect para isso)
+  useEffect(() => {
+    if (fromQuiz) {
+      setIsLogin(false); // Força modal de cadastro quando vem do quiz
+    }
+  }, [fromQuiz]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");

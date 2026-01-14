@@ -11,6 +11,11 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   
+  // Desabilitar Turbopack para evitar erros de runtime
+  experimental: {
+    optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
+  },
+  
   // Configuração de imagens para principais provedores
   images: {
     remotePatterns: [
@@ -189,11 +194,6 @@ const nextConfig: NextConfig = {
     // Tamanhos otimizados para diferentes dispositivos
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
-  },
-  
-  // Configuração experimental para melhor performance
-  experimental: {
-    optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
   },
   
   // Headers CORS para permitir acesso da plataforma Lasy

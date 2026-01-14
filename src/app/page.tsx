@@ -94,7 +94,7 @@ export default function LandingPage() {
               <span className="relative z-10">
                 Descubra seu perfil financeiro
               </span>
-              <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-blue-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              <div className="absolute inset-0 bg-gradient-to-r from-purple-400 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
             </button>
           </div>
 

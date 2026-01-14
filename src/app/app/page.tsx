@@ -79,6 +79,7 @@ export default function AppPage() {
   const [showPaywall, setShowPaywall] = useState(false);
   const [userName, setUserName] = useState("Usuário");
   const [isLoadingUser, setIsLoadingUser] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
 
   // Estados para transações
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -137,38 +138,62 @@ export default function AppPage() {
   useEffect(() => {
     const fetchUserData = async () => {
       try {
-        const { data: { user }, error } = await supabase.auth.getUser();
+        // Verificar sessão ativa primeiro
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
-        if (error) {
-          console.error("Erro ao buscar usuário:", error);
+        if (sessionError || !session) {
+          console.log("Nenhuma sessão ativa, redirecionando para login");
           router.push("/login");
           return;
         }
 
-        if (!user) {
-          router.push("/login");
-          return;
-        }
+        const user = session.user;
+        setUserId(user.id);
 
-        // Buscar dados do perfil do usuário na tabela users
+        // Buscar dados do perfil do usuário na tabela public.users
         const { data: userData, error: userError } = await supabase
           .from('users')
-          .select('nome, is_premium')
+          .select('*')
           .eq('id', user.id)
-          .single();
+          .maybeSingle();
 
-        if (userError) {
-          console.error("Erro ao buscar dados do usuário:", userError);
-          // Se não encontrar na tabela users, usar o email como nome
-          const emailName = user.email?.split('@')[0] || 'Usuário';
-          setUserName(emailName.charAt(0).toUpperCase() + emailName.slice(1));
-        } else if (userData) {
-          setUserName(userData.nome || user.email?.split('@')[0] || 'Usuário');
+        const emailName = user.email?.split('@')[0] || 'Usuário';
+        const displayName = emailName.charAt(0).toUpperCase() + emailName.slice(1);
+
+        if (!userData) {
+          // Usuário não existe, criar registro usando upsert
+          const { data: newUser, error: upsertError } = await supabase
+            .from('users')
+            .upsert(
+              { 
+                id: user.id,
+                email: user.email,
+                nome: displayName,
+                is_premium: false 
+              },
+              { 
+                onConflict: 'id'
+              }
+            )
+            .select()
+            .single();
+
+          if (upsertError) {
+            console.error("Erro ao criar registro do usuário:", upsertError);
+            // Mesmo com erro, continuar com valores padrão
+            setUserName(displayName);
+            setIsPremium(false);
+          } else {
+            setUserName(newUser?.nome || displayName);
+            setIsPremium(newUser?.is_premium || false);
+          }
+        } else {
+          // Usuário já existe, usar dados existentes
+          setUserName(userData.nome || displayName);
           setIsPremium(userData.is_premium || false);
         }
       } catch (error) {
         console.error("Erro ao verificar autenticação:", error);
-        router.push("/login");
       } finally {
         setIsLoadingUser(false);
       }
@@ -177,34 +202,95 @@ export default function AppPage() {
     fetchUserData();
   }, [router]);
 
-  // Carregar dados do localStorage
+  // Carregar dados do Supabase quando usuário estiver pronto
   useEffect(() => {
-    if (isLoadingUser) return;
+    if (!userId || isLoadingUser) return;
 
-    const savedTransactions = localStorage.getItem("transactions");
-    const savedCategories = localStorage.getItem("categories");
-    const savedMetas = localStorage.getItem("metas");
-    const savedTentativas = localStorage.getItem("tentativasPossoComprar");
-    const savedHistorico = localStorage.getItem("historicoPossoComprar");
+    const loadDataFromSupabase = async () => {
+      try {
+        // Carregar transações com retry
+        try {
+          const { data: transacoesData, error: transacoesError } = await supabase
+            .from('transacoes')
+            .select('*')
+            .eq('user_id', userId)
+            .order('data', { ascending: false });
 
-    if (savedTransactions) setTransactions(JSON.parse(savedTransactions));
-    if (savedCategories) setCategories(JSON.parse(savedCategories));
-    if (savedMetas) setMetas(JSON.parse(savedMetas));
-    if (savedTentativas) setTentativasPossoComprar(JSON.parse(savedTentativas));
-    if (savedHistorico) setHistoricoPossoComprar(JSON.parse(savedHistorico));
-  }, [isLoadingUser]);
+          if (!transacoesError && transacoesData) {
+            setTransactions(transacoesData);
+          } else if (transacoesError) {
+            console.error("Erro ao carregar transações:", transacoesError);
+          }
+        } catch (err) {
+          console.error("Falha na conexão ao carregar transações:", err);
+        }
 
-  // Salvar dados no localStorage
-  useEffect(() => {
-    if (isLoadingUser) return;
+        // Carregar categorias com retry
+        try {
+          const { data: categoriasData, error: categoriasError } = await supabase
+            .from('categorias')
+            .select('*')
+            .eq('user_id', userId);
 
-    localStorage.setItem("transactions", JSON.stringify(transactions));
-    localStorage.setItem("categories", JSON.stringify(categories));
-    localStorage.setItem("metas", JSON.stringify(metas));
-    localStorage.setItem("isPremium", JSON.stringify(isPremium));
-    localStorage.setItem("tentativasPossoComprar", JSON.stringify(tentativasPossoComprar));
-    localStorage.setItem("historicoPossoComprar", JSON.stringify(historicoPossoComprar));
-  }, [transactions, categories, metas, isPremium, tentativasPossoComprar, historicoPossoComprar, isLoadingUser]);
+          if (!categoriasError && categoriasData && categoriasData.length > 0) {
+            setCategories(categoriasData.map(cat => ({
+              ...cat,
+              gasto: 0 // Será calculado pelo useEffect de gastos
+            })));
+          } else if (categoriasError) {
+            console.error("Erro ao carregar categorias:", categoriasError);
+          }
+        } catch (err) {
+          console.error("Falha na conexão ao carregar categorias:", err);
+        }
+
+        // Carregar metas com retry
+        try {
+          const { data: metasData, error: metasError } = await supabase
+            .from('metas')
+            .select('*')
+            .eq('user_id', userId);
+
+          if (!metasError && metasData) {
+            setMetas(metasData);
+          } else if (metasError) {
+            console.error("Erro ao carregar metas:", metasError);
+          }
+        } catch (err) {
+          console.error("Falha na conexão ao carregar metas:", err);
+        }
+
+        // Carregar histórico "Posso Comprar?" com retry
+        try {
+          const { data: historicoData, error: historicoError } = await supabase
+            .from('historico_posso_comprar')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false });
+
+          if (!historicoError && historicoData) {
+            setHistoricoPossoComprar(historicoData.map(h => ({
+              id: h.id,
+              valor: parseFloat(h.valor),
+              descricao: h.descricao,
+              resposta: h.resposta,
+              explicacao: h.explicacao,
+              data: h.created_at
+            })));
+          } else if (historicoError) {
+            console.error("Erro ao carregar histórico:", historicoError);
+          }
+        } catch (err) {
+          console.error("Falha na conexão ao carregar histórico:", err);
+        }
+
+      } catch (error) {
+        console.error("Erro geral ao carregar dados do Supabase:", error);
+      }
+    };
+
+    loadDataFromSupabase();
+  }, [userId, isLoadingUser]);
 
   // Atualizar gastos das categorias
   useEffect(() => {
@@ -217,9 +303,11 @@ export default function AppPage() {
     setCategories(updatedCategories);
   }, [transactions]);
 
-  const handleAddTransaction = () => {
+  const handleAddTransaction = async () => {
+    if (!userId) return;
+
     const transaction: Transaction = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       descricao: newTransaction.descricao,
       valor: parseFloat(newTransaction.valor),
       tipo: newTransaction.tipo,
@@ -228,6 +316,27 @@ export default function AppPage() {
       parcelado: newTransaction.parcelado,
       parcelas: newTransaction.parcelas,
     };
+
+    // Salvar no Supabase
+    const { error } = await supabase
+      .from('transacoes')
+      .insert([{
+        id: transaction.id,
+        user_id: userId,
+        descricao: transaction.descricao,
+        valor: transaction.valor,
+        tipo: transaction.tipo,
+        categoria: transaction.categoria,
+        data: transaction.data,
+        parcelado: transaction.parcelado,
+        parcelas: transaction.parcelas
+      }]);
+
+    if (error) {
+      console.error("Erro ao salvar transação:", error);
+      alert("Erro ao salvar transação. Tente novamente.");
+      return;
+    }
 
     setTransactions([...transactions, transaction]);
     setShowTransactionModal(false);
@@ -242,39 +351,111 @@ export default function AppPage() {
     });
   };
 
-  const handleDeleteTransaction = (id: string) => {
+  const handleDeleteTransaction = async (id: string) => {
+    if (!userId) return;
+
+    // Deletar do Supabase
+    const { error } = await supabase
+      .from('transacoes')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error("Erro ao deletar transação:", error);
+      alert("Erro ao deletar transação. Tente novamente.");
+      return;
+    }
+
     setTransactions(transactions.filter((t) => t.id !== id));
   };
 
-  const handleAddMeta = () => {
+  const handleAddMeta = async () => {
+    if (!userId) return;
+
     const meta: Meta = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       nome: newMeta.nome,
       valor_total: parseFloat(newMeta.valor_total),
       valor_atual: 0,
       prazo: newMeta.prazo,
     };
 
+    // Salvar no Supabase
+    const { error } = await supabase
+      .from('metas')
+      .insert([{
+        id: meta.id,
+        user_id: userId,
+        nome: meta.nome,
+        valor_total: meta.valor_total,
+        valor_atual: meta.valor_atual,
+        prazo: meta.prazo
+      }]);
+
+    if (error) {
+      console.error("Erro ao salvar meta:", error);
+      alert("Erro ao salvar meta. Tente novamente.");
+      return;
+    }
+
     setMetas([...metas, meta]);
     setShowMetaModal(false);
     setNewMeta({ nome: "", valor_total: "", prazo: "" });
   };
 
-  const handleAdicionarValorMeta = (metaId: string, valor: number) => {
+  const handleAdicionarValorMeta = async (metaId: string, valor: number) => {
+    if (!userId) return;
+
+    const metaAtualizada = metas.find(m => m.id === metaId);
+    if (!metaAtualizada) return;
+
+    const novoValorAtual = metaAtualizada.valor_atual + valor;
+
+    // Atualizar no Supabase
+    const { error } = await supabase
+      .from('metas')
+      .update({ valor_atual: novoValorAtual })
+      .eq('id', metaId)
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error("Erro ao atualizar meta:", error);
+      alert("Erro ao atualizar meta. Tente novamente.");
+      return;
+    }
+
     setMetas(
       metas.map((m) =>
-        m.id === metaId ? { ...m, valor_atual: m.valor_atual + valor } : m
+        m.id === metaId ? { ...m, valor_atual: novoValorAtual } : m
       )
     );
   };
 
-  const handleDeleteMeta = (id: string) => {
+  const handleDeleteMeta = async (id: string) => {
+    if (!userId) return;
+
+    // Deletar do Supabase
+    const { error } = await supabase
+      .from('metas')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error("Erro ao deletar meta:", error);
+      alert("Erro ao deletar meta. Tente novamente.");
+      return;
+    }
+
     setMetas(metas.filter((m) => m.id !== id));
   };
 
-  const handleAddCategory = () => {
+  const handleAddCategory = async () => {
+    if (!userId) return;
+
     const category: Category = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       nome: newCategory.nome,
       cor: newCategory.cor,
       icone: newCategory.icone,
@@ -282,12 +463,45 @@ export default function AppPage() {
       gasto: 0,
     };
 
+    // Salvar no Supabase
+    const { error } = await supabase
+      .from('categorias')
+      .insert([{
+        id: category.id,
+        user_id: userId,
+        nome: category.nome,
+        cor: category.cor,
+        icone: category.icone,
+        orcamento: category.orcamento
+      }]);
+
+    if (error) {
+      console.error("Erro ao salvar categoria:", error);
+      alert("Erro ao salvar categoria. Tente novamente.");
+      return;
+    }
+
     setCategories([...categories, category]);
     setShowCategoryModal(false);
     setNewCategory({ nome: "", orcamento: "", cor: "#10B981", icone: "📦" });
   };
 
-  const handleUpdateCategoryBudget = (categoryId: string, newBudget: number) => {
+  const handleUpdateCategoryBudget = async (categoryId: string, newBudget: number) => {
+    if (!userId) return;
+
+    // Atualizar no Supabase
+    const { error } = await supabase
+      .from('categorias')
+      .update({ orcamento: newBudget })
+      .eq('id', categoryId)
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error("Erro ao atualizar orçamento:", error);
+      alert("Erro ao atualizar orçamento. Tente novamente.");
+      return;
+    }
+
     setCategories(
       categories.map((cat) =>
         cat.id === categoryId ? { ...cat, orcamento: newBudget } : cat
@@ -295,15 +509,32 @@ export default function AppPage() {
     );
   };
 
-  const handleDeleteCategory = (id: string) => {
+  const handleDeleteCategory = async (id: string) => {
+    if (!userId) return;
+
+    // Deletar do Supabase
+    const { error } = await supabase
+      .from('categorias')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error("Erro ao deletar categoria:", error);
+      alert("Erro ao deletar categoria. Tente novamente.");
+      return;
+    }
+
     setCategories(categories.filter((c) => c.id !== id));
   };
 
-  const handlePossoComprar = () => {
+  const handlePossoComprar = async () => {
     if (!isPremium && tentativasPossoComprar >= 1) {
       setShowPaywall(true);
       return;
     }
+
+    if (!userId) return;
 
     const valor = parseFloat(possoComprarValor);
     const totalReceitas = transactions
@@ -326,9 +557,26 @@ export default function AppPage() {
     setPossoComprarResposta(resposta);
     setTentativasPossoComprar(tentativasPossoComprar + 1);
 
-    // Adicionar ao histórico
+    // Salvar no histórico do Supabase
+    const historicoId = crypto.randomUUID();
+    const { error } = await supabase
+      .from('historico_posso_comprar')
+      .insert([{
+        id: historicoId,
+        user_id: userId,
+        valor: valor.toString(),
+        descricao: possoComprarDescricao,
+        resposta: resposta.resposta,
+        explicacao: resposta.explicacao
+      }]);
+
+    if (error) {
+      console.error("Erro ao salvar histórico:", error);
+    }
+
+    // Adicionar ao histórico local
     const historico = {
-      id: Date.now().toString(),
+      id: historicoId,
       valor,
       descricao: possoComprarDescricao,
       resposta: resposta.resposta,
@@ -374,10 +622,26 @@ export default function AppPage() {
 
   const getFilteredTransactions = () => {
     const dias = parseInt(filtroExtrato);
-    const dataLimite = new Date();
-    dataLimite.setDate(dataLimite.getDate() - dias);
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    
+    if (dias === 1) {
+      return transactions.filter((t) => {
+        const dataTransacao = new Date(t.data + 'T00:00:00');
+        dataTransacao.setHours(0, 0, 0, 0);
+        return dataTransacao.getTime() === hoje.getTime();
+      });
+    } else {
+      const dataLimite = new Date();
+      dataLimite.setDate(dataLimite.getDate() - (dias - 1));
+      dataLimite.setHours(0, 0, 0, 0);
 
-    return transactions.filter((t) => new Date(t.data) >= dataLimite);
+      return transactions.filter((t) => {
+        const dataTransacao = new Date(t.data + 'T00:00:00');
+        dataTransacao.setHours(0, 0, 0, 0);
+        return dataTransacao >= dataLimite;
+      });
+    }
   };
 
   const filteredTransactions = getFilteredTransactions();
@@ -836,12 +1100,6 @@ export default function AppPage() {
                   <div className="w-6 h-6 bg-green-500/20 rounded-full flex items-center justify-center flex-shrink-0">
                     <span className="text-green-400 text-sm">✓</span>
                   </div>
-                  <span>Roast semanal personalizado</span>
-                </div>
-                <div className="flex items-center gap-3 text-slate-300">
-                  <div className="w-6 h-6 bg-green-500/20 rounded-full flex items-center justify-center flex-shrink-0">
-                    <span className="text-green-400 text-sm">✓</span>
-                  </div>
                   <span>Exportação completa de dados</span>
                 </div>
                 <div className="flex items-center gap-3 text-slate-300">
@@ -901,6 +1159,76 @@ function DashboardPage({
       ? ((saldoTotal / totalReceitas) * 100).toFixed(1)
       : "0";
 
+  // Calcular comparação com mês anterior
+  const calcularComparacaoMesAnterior = () => {
+    const hoje = new Date();
+    const mesAtual = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    const mesAnterior = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+    const inicioMesAnterior = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+    const fimMesAnterior = new Date(hoje.getFullYear(), hoje.getMonth(), 0);
+
+    // Saldo do mês atual
+    const receitasMesAtual = transactions
+      .filter((t) => {
+        const dataTransacao = new Date(t.data + 'T00:00:00');
+        return t.tipo === "receita" && dataTransacao >= mesAtual;
+      })
+      .reduce((acc, t) => acc + t.valor, 0);
+
+    const despesasMesAtual = transactions
+      .filter((t) => {
+        const dataTransacao = new Date(t.data + 'T00:00:00');
+        return t.tipo === "despesa" && dataTransacao >= mesAtual;
+      })
+      .reduce((acc, t) => acc + t.valor, 0);
+
+    const saldoMesAtual = receitasMesAtual - despesasMesAtual;
+
+    // Saldo do mês anterior
+    const receitasMesAnterior = transactions
+      .filter((t) => {
+        const dataTransacao = new Date(t.data + 'T00:00:00');
+        return (
+          t.tipo === "receita" &&
+          dataTransacao >= inicioMesAnterior &&
+          dataTransacao <= fimMesAnterior
+        );
+      })
+      .reduce((acc, t) => acc + t.valor, 0);
+
+    const despesasMesAnterior = transactions
+      .filter((t) => {
+        const dataTransacao = new Date(t.data + 'T00:00:00');
+        return (
+          t.tipo === "despesa" &&
+          dataTransacao >= inicioMesAnterior &&
+          dataTransacao <= fimMesAnterior
+        );
+      })
+      .reduce((acc, t) => acc + t.valor, 0);
+
+    const saldoMesAnterior = receitasMesAnterior - despesasMesAnterior;
+
+    // Se não há dados do mês anterior, retornar null
+    if (receitasMesAnterior === 0 && despesasMesAnterior === 0) {
+      return null;
+    }
+
+    // Calcular variação percentual
+    if (saldoMesAnterior === 0) {
+      return saldoMesAtual > 0 ? { percentual: 100, positivo: true } : null;
+    }
+
+    const variacao = ((saldoMesAtual - saldoMesAnterior) / Math.abs(saldoMesAnterior)) * 100;
+    
+    return {
+      percentual: Math.abs(variacao).toFixed(1),
+      positivo: variacao >= 0,
+    };
+  };
+
+  const comparacao = calcularComparacaoMesAnterior();
+
   // Calcular fluxo de caixa mensal com dados reais
   const getFluxoCaixaData = () => {
     const meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun"];
@@ -913,7 +1241,7 @@ function DashboardPage({
       
       const receitasMes = transactions
         .filter((t) => {
-          const dataTransacao = new Date(t.data);
+          const dataTransacao = new Date(t.data + 'T00:00:00');
           return (
             t.tipo === "receita" &&
             dataTransacao >= mesAtual &&
@@ -924,7 +1252,7 @@ function DashboardPage({
 
       const despesasMes = transactions
         .filter((t) => {
-          const dataTransacao = new Date(t.data);
+          const dataTransacao = new Date(t.data + 'T00:00:00');
           return (
             t.tipo === "despesa" &&
             dataTransacao >= mesAtual &&
@@ -976,10 +1304,18 @@ function DashboardPage({
               minimumFractionDigits: 2,
             })}
           </p>
-          <p className="text-xs text-green-400 mt-1 flex items-center gap-1">
-            <ArrowUpCircle className="w-3 h-3" />
-            +12.5% vs mês anterior
-          </p>
+          {comparacao ? (
+            <p className={`text-xs mt-1 flex items-center gap-1 ${comparacao.positivo ? 'text-green-400' : 'text-red-400'}`}>
+              {comparacao.positivo ? (
+                <ArrowUpCircle className="w-3 h-3" />
+              ) : (
+                <ArrowDownCircle className="w-3 h-3" />
+              )}
+              {comparacao.positivo ? '+' : '-'}{comparacao.percentual}% vs mês anterior
+            </p>
+          ) : (
+            <p className="text-xs text-slate-500 mt-1">Primeiro mês de dados</p>
+          )}
         </div>
 
         <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6 shadow-sm backdrop-blur-sm">
@@ -1136,33 +1472,6 @@ function DashboardPage({
         </div>
       )}
 
-      {/* Resumo Semanal */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 shadow-sm backdrop-blur-sm">
-        <div className="flex items-start gap-4">
-          <div className="w-12 h-12 bg-purple-900/50 rounded-full flex items-center justify-center flex-shrink-0">
-            <FileText className="w-6 h-6 text-purple-300" />
-          </div>
-          <div className="flex-1">
-            <h3 className="text-lg font-semibold text-white mb-2">
-              📊 Resumo da Sua Semana
-            </h3>
-            <p className="text-slate-300 leading-relaxed mb-3">
-              Você está indo bem! Suas despesas estão{" "}
-              {totalDespesas < totalReceitas * 0.7
-                ? "controladas"
-                : "um pouco altas"}{" "}
-              este mês.
-              {saldoTotal > 0 &&
-                ` Você conseguiu economizar R$ ${saldoTotal.toFixed(2)}.`}
-            </p>
-            <div className="flex items-center gap-2 text-sm text-slate-400">
-              <Lock className="w-4 h-4" />
-              <span>Roast semanal personalizado disponível no Premium</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Orçamentos */}
       <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6 shadow-sm backdrop-blur-sm">
         <h3 className="text-lg font-semibold text-white mb-6">
@@ -1243,10 +1552,26 @@ function ExtratoPage({
 }) {
   const getFilteredTransactions = () => {
     const dias = parseInt(filtro);
-    const dataLimite = new Date();
-    dataLimite.setDate(dataLimite.getDate() - dias);
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    
+    if (dias === 1) {
+      return transactions.filter((t) => {
+        const dataTransacao = new Date(t.data + 'T00:00:00');
+        dataTransacao.setHours(0, 0, 0, 0);
+        return dataTransacao.getTime() === hoje.getTime();
+      });
+    } else {
+      const dataLimite = new Date();
+      dataLimite.setDate(dataLimite.getDate() - (dias - 1));
+      dataLimite.setHours(0, 0, 0, 0);
 
-    return transactions.filter((t) => new Date(t.data) >= dataLimite);
+      return transactions.filter((t) => {
+        const dataTransacao = new Date(t.data + 'T00:00:00');
+        dataTransacao.setHours(0, 0, 0, 0);
+        return dataTransacao >= dataLimite;
+      });
+    }
   };
 
   const filteredTransactions = getFilteredTransactions();
@@ -1355,7 +1680,7 @@ function ExtratoPage({
                         </span>
                       </div>
                       <p className="text-sm text-slate-400">
-                        {new Date(transaction.data).toLocaleDateString(
+                        {new Date(transaction.data + 'T00:00:00').toLocaleDateString(
                           "pt-BR"
                         )}
                       </p>
@@ -1963,7 +2288,6 @@ function ConfiguracoesPage({
       const { data: { user } } = await supabase.auth.getUser();
       
       if (user) {
-        // Atualizar nome na tabela users
         const { error } = await supabase
           .from('users')
           .update({ nome: tempName })
@@ -2051,39 +2375,6 @@ function ConfiguracoesPage({
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Exportar Dados */}
-      <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6">
-        <h3 className="text-lg font-semibold text-white mb-4">
-          Exportar Dados
-        </h3>
-        <p className="text-sm text-slate-400 mb-4">
-          Baixe suas transações e relatórios
-        </p>
-        <div className="flex gap-3">
-          <button
-            onClick={() => onExport("csv")}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg hover:bg-slate-700 transition-colors"
-          >
-            <Download className="w-4 h-4" />
-            <span className="text-sm font-semibold">Exportar CSV</span>
-          </button>
-          <button
-            onClick={() => onExport("pdf")}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg hover:bg-slate-700 transition-colors"
-          >
-            <Download className="w-4 h-4" />
-            <span className="text-sm font-semibold">
-              Exportar PDF {!isPremium && "🔒"}
-            </span>
-          </button>
-        </div>
-        {!isPremium && (
-          <p className="text-xs text-slate-500 mt-2">
-            Exportação em PDF disponível apenas no Premium
-          </p>
-        )}
       </div>
     </div>
   );
